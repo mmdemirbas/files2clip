@@ -1,0 +1,91 @@
+version: "3"
+
+vars:
+  BINARY_NAME: files2clip
+  BUILD_DIR: build
+  DIST_DIR: dist
+  VERSION: dev
+  LDFLAGS: -s -w -X main.version={{.VERSION}}
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  all:
+    desc: Run tests, lint, then build all distribution binaries
+    cmds:
+      - task: test
+      - task: lint
+      - task: dist
+
+  clean:
+    desc: Delete build artifacts
+    platforms: [linux, darwin]
+    cmds:
+      - rm -rf {{.BUILD_DIR}} {{.DIST_DIR}}
+
+  clean:windows:
+    desc: Delete build artifacts (Windows)
+    platforms: [windows]
+    cmds:
+      - cmd: powershell -Command "foreach ($d in '{{.BUILD_DIR}}','{{.DIST_DIR}}') { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }"
+
+  build:
+    desc: Build for the current platform
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - CGO_ENABLED=0 go build -ldflags="{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} ./cmd/files2clip
+
+  dist:
+    desc: Cross-compile for all supported platforms
+    cmds:
+      - mkdir -p {{.DIST_DIR}}
+      - CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -ldflags="{{.LDFLAGS}}" -o {{.DIST_DIR}}/{{.BINARY_NAME}}-darwin-arm64       ./cmd/files2clip
+      - CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.DIST_DIR}}/{{.BINARY_NAME}}-darwin-amd64       ./cmd/files2clip
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.DIST_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe  ./cmd/files2clip
+      - CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.DIST_DIR}}/{{.BINARY_NAME}}-linux-amd64        ./cmd/files2clip
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -v ./...
+
+  bench:
+    desc: Run benchmark tests
+    cmds:
+      - go test -bench=. -benchmem ./...
+
+  lint:
+    desc: Run static analysis
+    cmds:
+      - go vet ./...
+
+  setup:windows:
+    desc: Install dependencies on Windows
+    platforms: [windows]
+    cmds:
+      - echo "PowerShell is required (included with Windows). No additional dependencies needed."
+
+  setup:unix:
+    desc: Install clipboard dependency on Linux (macOS needs no extra setup)
+    platforms: [linux, darwin]
+    cmds:
+      - |
+        case "$(uname -s)" in
+          Linux*)
+            if command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get install -y xclip
+            elif command -v dnf >/dev/null 2>&1; then
+              sudo dnf install -y xclip
+            elif command -v pacman >/dev/null 2>&1; then
+              sudo pacman -S --noconfirm xclip
+            else
+              echo "Please install xclip manually for your distribution."
+            fi
+            ;;
+          Darwin*)
+            echo "macOS: pbcopy is built-in. No extra setup needed."
+            ;;
+        esac
