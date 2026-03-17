@@ -10,43 +10,88 @@ func TestMatch(t *testing.T) {
 		isDir   bool
 		want    bool
 	}{
-		// Simple filename patterns
+		// ── Simple filename patterns ──
 		{"match extension", "*.log", "debug.log", false, true},
 		{"match extension nested", "*.log", "src/debug.log", false, true},
 		{"no match extension", "*.log", "debug.txt", false, false},
+		{"exact name", "Makefile", "Makefile", false, true},
+		{"exact name nested", "Makefile", "src/Makefile", false, true},
 
-		// Directory patterns
+		// ── Directory-only patterns (trailing /) ──
 		{"dir pattern on dir", "build/", "build", true, true},
 		{"dir pattern on file", "build/", "build", false, false},
-		{"dir pattern nested", "node_modules/", "node_modules", true, true},
+		{"dir pattern nested on dir", "node_modules/", "node_modules", true, true},
+		{"dir pattern nested match", "vendor/", "src/vendor", true, true},
 
-		// Anchored patterns (contain /)
+		// ── Anchored patterns (contain /) ──
 		{"anchored match", "src/*.go", "src/main.go", false, true},
-		{"anchored no match", "src/*.go", "other/main.go", false, false},
+		{"anchored no match deeper", "src/*.go", "src/sub/main.go", false, false},
+		{"anchored no match other dir", "src/*.go", "other/main.go", false, false},
 
-		// ** patterns
-		{"doublestar prefix", "**/foo", "foo", false, true},
-		{"doublestar prefix nested", "**/foo", "a/b/foo", false, true},
-		{"doublestar middle", "a/**/z", "a/z", false, true},
-		{"doublestar middle deep", "a/**/z", "a/b/c/z", false, true},
-		{"doublestar suffix", "src/**", "src/main.go", false, true},
-		{"doublestar suffix deep", "src/**", "src/a/b/c.go", false, true},
-
-		// Negation
-		{"negation", "*.log\n!important.log", "debug.log", false, true},
-		{"negation keeps", "*.log\n!important.log", "important.log", false, false},
-
-		// Leading slash anchor
+		// ── Leading / anchor ──
 		{"leading slash", "/build", "build", false, true},
 		{"leading slash no deep match", "/build", "src/build", false, false},
+		{"leading slash with wildcard", "/*.go", "main.go", false, true},
+		{"leading slash wildcard no deep", "/*.go", "src/main.go", false, false},
 
-		// Comments and blank lines
+		// ── ** (double star) patterns ──
+		// leading **/
+		{"doublestar prefix", "**/foo", "foo", false, true},
+		{"doublestar prefix nested", "**/foo", "a/b/foo", false, true},
+		{"doublestar prefix with ext", "**/*.go", "main.go", false, true},
+		{"doublestar prefix with ext nested", "**/*.go", "a/b/c/main.go", false, true},
+		// trailing /**
+		{"doublestar suffix", "src/**", "src/main.go", false, true},
+		{"doublestar suffix deep", "src/**", "src/a/b/c.go", false, true},
+		{"doublestar suffix no match root", "src/**", "main.go", false, false},
+		// middle **/
+		{"doublestar middle zero dirs", "a/**/z", "a/z", false, true},
+		{"doublestar middle one dir", "a/**/z", "a/b/z", false, true},
+		{"doublestar middle deep", "a/**/z", "a/b/c/d/z", false, true},
+		{"doublestar middle with wildcard", "src/**/*.test.go", "src/pkg/handler.test.go", false, true},
+		{"doublestar middle with wildcard deep", "src/**/*.test.go", "src/a/b/c.test.go", false, true},
+
+		// ** not adjacent to / (treated as two regular *)
+		{"star star no sep", "a**.go", "abc.go", false, true},
+		{"star star no sep no cross dir", "a**.go", "a/b.go", false, false},
+
+		// ── Negation (!) ──
+		{"negation excludes", "*.log\n!important.log", "debug.log", false, true},
+		{"negation re-includes", "*.log\n!important.log", "important.log", false, false},
+		{"double negation", "*.log\n!important.log\n*.log", "important.log", false, true},
+		{"negation with path", "build/\n!build/release/", "build/release", true, false},
+
+		// ── Character classes [...] ──
+		{"char class simple", "*.[oa]", "test.o", false, true},
+		{"char class simple 2", "*.[oa]", "test.a", false, true},
+		{"char class no match", "*.[oa]", "test.c", false, false},
+		{"char class range", "[Tt]est", "Test", false, true},
+		{"char class range lower", "[Tt]est", "test", false, true},
+		{"char class range no match", "[Tt]est", "Best", false, false},
+		{"char class negated", "*.[!o]", "test.a", false, true},
+		{"char class negated no match", "*.[!o]", "test.o", false, false},
+		{"char class range a-z", "[a-z].txt", "m.txt", false, true},
+		{"char class range a-z no match", "[a-z].txt", "M.txt", false, false},
+
+		// ── Backslash escaping ──
+		{"escaped hash", "\\#file", "#file", false, true},
+		{"escaped bang", "\\!file", "!file", false, true},
+
+		// ── Comments and blank lines ──
 		{"comment ignored", "# comment\n*.log", "debug.log", false, true},
+		{"comment only", "# comment", "anything", false, false},
 		{"blank lines ignored", "\n\n*.log\n\n", "debug.log", false, true},
+		{"windows line endings", "*.log\r\n*.txt", "foo.txt", false, true},
 
-		// Question mark
+		// ── Question mark ──
 		{"question mark", "file?.txt", "file1.txt", false, true},
-		{"question mark no slash", "file?.txt", "file/.txt", false, false},
+		{"question mark no match slash", "file?.txt", "file/.txt", false, false},
+		{"question mark no match empty", "file?.txt", "file.txt", false, false},
+
+		// ── Edge cases ──
+		{"empty path", "*.log", "", false, false},
+		{"root path", "*.go", "/main.go", false, true},
+		{"absolute path normalized", "*.go", "/src/main.go", false, true},
 	}
 
 	for _, tt := range tests {
@@ -61,6 +106,34 @@ func TestMatch(t *testing.T) {
 	}
 }
 
+func TestMerge(t *testing.T) {
+	a := Parse("*.log")
+	b := Parse("*.txt")
+	merged := Merge(a, b)
+
+	if !merged.Match("foo.log", false) {
+		t.Error("merged should match *.log")
+	}
+	if !merged.Match("foo.txt", false) {
+		t.Error("merged should match *.txt")
+	}
+	if merged.Match("foo.go", false) {
+		t.Error("merged should not match *.go")
+	}
+}
+
+func TestMergeNil(t *testing.T) {
+	a := Parse("*.log")
+	merged := Merge(nil, a)
+	if !merged.Match("foo.log", false) {
+		t.Error("merge with nil should still work")
+	}
+	merged = Merge(a, nil)
+	if !merged.Match("foo.log", false) {
+		t.Error("merge with nil should still work")
+	}
+}
+
 func TestNilMatcher(t *testing.T) {
 	var m *Matcher
 	if m.Match("foo.txt", false) {
@@ -68,9 +141,25 @@ func TestNilMatcher(t *testing.T) {
 	}
 }
 
+func TestLoadFile(t *testing.T) {
+	t.Run("nonexistent", func(t *testing.T) {
+		_, err := LoadFile("/nonexistent/ignore")
+		if err == nil {
+			t.Error("expected error for nonexistent file")
+		}
+	})
+}
+
 func BenchmarkMatch(b *testing.B) {
 	m := Parse("*.log\nnode_modules/\nsrc/**/*.test.go\n!important.log")
 	for b.Loop() {
 		m.Match("src/pkg/handler_test.go", false)
+	}
+}
+
+func BenchmarkMatchDeep(b *testing.B) {
+	m := Parse("**/test/**/*.snap")
+	for b.Loop() {
+		m.Match("packages/core/src/test/fixtures/output.snap", false)
 	}
 }
