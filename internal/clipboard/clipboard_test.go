@@ -1,6 +1,8 @@
 package clipboard
 
 import (
+	"os"
+	"os/exec"
 	"runtime"
 	"testing"
 )
@@ -33,19 +35,30 @@ func testClipboardCmd(t *testing.T, label string, fn func() (string, []string, e
 			t.Errorf("%s: expected no args, got %v", label, args)
 		}
 	case "linux":
-		if cmd != "xclip" {
-			t.Errorf("%s: cmd = %q, want %q", label, cmd, "xclip")
-		}
-		if len(args) < 2 {
-			t.Fatalf("%s: expected at least 2 args, got %v", label, args)
-		}
-		if args[0] != "-selection" || args[1] != "clipboard" {
-			t.Errorf("%s: expected -selection clipboard, got %v", label, args[:2])
-		}
-		if label == "read" {
-			if len(args) != 3 || args[2] != "-o" {
+		switch cmd {
+		case "xclip":
+			if len(args) < 2 {
+				t.Fatalf("%s: expected at least 2 args, got %v", label, args)
+			}
+			if args[0] != "-selection" || args[1] != "clipboard" {
+				t.Errorf("%s: expected -selection clipboard, got %v", label, args[:2])
+			}
+			if label == "read" && (len(args) != 3 || args[2] != "-o") {
 				t.Errorf("%s: expected -o flag for read, got %v", label, args)
 			}
+		case "wl-copy":
+			if label != "write" {
+				t.Errorf("wl-copy should only be used for write, not %s", label)
+			}
+		case "wl-paste":
+			if label != "read" {
+				t.Errorf("wl-paste should only be used for read, not %s", label)
+			}
+			if len(args) != 1 || args[0] != "--no-newline" {
+				t.Errorf("%s: expected [--no-newline], got %v", label, args)
+			}
+		default:
+			t.Errorf("%s: unexpected command %q on linux", label, cmd)
 		}
 	case "windows":
 		if cmd != "powershell" {
@@ -54,5 +67,120 @@ func testClipboardCmd(t *testing.T, label string, fn func() (string, []string, e
 		if len(args) == 0 {
 			t.Errorf("%s: expected args for powershell, got none", label)
 		}
+	}
+}
+
+func TestLinuxCmd(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only test")
+	}
+
+	t.Run("xclip fallback without WAYLAND_DISPLAY", func(t *testing.T) {
+		t.Setenv("WAYLAND_DISPLAY", "")
+
+		cmd, args, err := linuxCmd("write")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cmd != "xclip" {
+			t.Errorf("write: cmd = %q, want xclip", cmd)
+		}
+		if len(args) < 2 || args[0] != "-selection" {
+			t.Errorf("write: unexpected args %v", args)
+		}
+
+		cmd, args, err = linuxCmd("read")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cmd != "xclip" {
+			t.Errorf("read: cmd = %q, want xclip", cmd)
+		}
+		if len(args) < 3 || args[2] != "-o" {
+			t.Errorf("read: unexpected args %v", args)
+		}
+	})
+
+	t.Run("wayland preferred when available", func(t *testing.T) {
+		t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+
+		cmd, _, err := linuxCmd("write")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// If wl-copy is installed, it should be preferred
+		if _, lookErr := exec.LookPath("wl-copy"); lookErr == nil {
+			if cmd != "wl-copy" {
+				t.Errorf("write: cmd = %q, want wl-copy (WAYLAND_DISPLAY set)", cmd)
+			}
+		} else {
+			if cmd != "xclip" {
+				t.Errorf("write: cmd = %q, want xclip (wl-copy not found)", cmd)
+			}
+		}
+
+		cmd, _, err = linuxCmd("read")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, lookErr := exec.LookPath("wl-paste"); lookErr == nil {
+			if cmd != "wl-paste" {
+				t.Errorf("read: cmd = %q, want wl-paste (WAYLAND_DISPLAY set)", cmd)
+			}
+		} else {
+			if cmd != "xclip" {
+				t.Errorf("read: cmd = %q, want xclip (wl-paste not found)", cmd)
+			}
+		}
+	})
+}
+
+func TestLinuxCmdFallback(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only test")
+	}
+
+	// Even with WAYLAND_DISPLAY set, if wl-copy/wl-paste aren't in PATH,
+	// should fall back to xclip
+	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+	t.Setenv("PATH", "/nonexistent")
+
+	cmd, _, err := linuxCmd("write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd != "xclip" {
+		t.Errorf("write: cmd = %q, want xclip (fallback)", cmd)
+	}
+
+	cmd, _, err = linuxCmd("read")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd != "xclip" {
+		t.Errorf("read: cmd = %q, want xclip (fallback)", cmd)
+	}
+}
+
+func TestLinuxCmdNoWayland(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only test")
+	}
+
+	// Without WAYLAND_DISPLAY, should always use xclip
+	orig := os.Getenv("WAYLAND_DISPLAY")
+	os.Unsetenv("WAYLAND_DISPLAY")
+	defer func() {
+		if orig != "" {
+			os.Setenv("WAYLAND_DISPLAY", orig)
+		}
+	}()
+
+	cmd, _, err := linuxCmd("write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd != "xclip" {
+		t.Errorf("write: cmd = %q, want xclip", cmd)
 	}
 }

@@ -75,14 +75,15 @@ tasks:
       - |
         case "$(uname -s)" in
           Linux*)
+            echo "Installing clipboard tools..."
             if command -v apt-get >/dev/null 2>&1; then
-              sudo apt-get install -y xclip
+              sudo apt-get install -y xclip wl-clipboard
             elif command -v dnf >/dev/null 2>&1; then
-              sudo dnf install -y xclip
+              sudo dnf install -y xclip wl-clipboard
             elif command -v pacman >/dev/null 2>&1; then
-              sudo pacman -S --noconfirm xclip
+              sudo pacman -S --noconfirm xclip wl-clipboard
             else
-              echo "Please install xclip manually for your distribution."
+              echo "Please install xclip (X11) or wl-clipboard (Wayland) for your distribution."
             fi
             ;;
           Darwin*)

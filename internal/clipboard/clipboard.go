@@ -3,6 +3,7 @@ package clipboard
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 )
@@ -35,9 +36,9 @@ func readCmd() (string, []string, error) {
 			"-Command", "Get-Clipboard",
 		}, nil
 	case "darwin":
-		return "pbpaste", []string{}, nil
+		return "pbpaste", nil, nil
 	case "linux":
-		return "xclip", []string{"-selection", "clipboard", "-o"}, nil
+		return linuxCmd("read")
 	default:
 		return "", nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
@@ -51,10 +52,33 @@ func writeCmd() (string, []string, error) {
 			"-Command", "[Console]::InputEncoding=[System.Text.Encoding]::UTF8; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Set-Clipboard ([Console]::In.ReadToEnd())",
 		}, nil
 	case "darwin":
-		return "pbcopy", []string{}, nil
+		return "pbcopy", nil, nil
 	case "linux":
-		return "xclip", []string{"-selection", "clipboard"}, nil
+		return linuxCmd("write")
 	default:
 		return "", nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
+}
+
+// linuxCmd returns the appropriate clipboard command for Linux,
+// preferring Wayland (wl-copy/wl-paste) when available, falling
+// back to X11 (xclip).
+func linuxCmd(mode string) (string, []string, error) {
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		if mode == "read" {
+			if _, err := exec.LookPath("wl-paste"); err == nil {
+				return "wl-paste", []string{"--no-newline"}, nil
+			}
+		} else {
+			if _, err := exec.LookPath("wl-copy"); err == nil {
+				return "wl-copy", nil, nil
+			}
+		}
+	}
+
+	// Fall back to xclip (X11 / XWayland)
+	if mode == "read" {
+		return "xclip", []string{"-selection", "clipboard", "-o"}, nil
+	}
+	return "xclip", []string{"-selection", "clipboard"}, nil
 }
