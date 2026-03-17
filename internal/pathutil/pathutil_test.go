@@ -132,6 +132,37 @@ func TestReadPathsFromFile(t *testing.T) {
 	})
 }
 
+func TestParsePaths(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{"simple paths", "/a\n/b\n/c\n", []string{"/a", "/b", "/c"}},
+		{"with comments", "# comment\n/a\n# another\n/b\n", []string{"/a", "/b"}},
+		{"empty lines", "\n\n/a\n\n/b\n\n", []string{"/a", "/b"}},
+		{"whitespace trimming", "  /a  \n\t/b\t\n", []string{"/a", "/b"}},
+		{"windows line endings", "/a\r\n/b\r\n", []string{"/a", "/b"}},
+		{"empty input", "", nil},
+		{"only whitespace", "  \n  \n", nil},
+		{"only comments", "# a\n# b\n", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParsePaths(tt.input)
+			if len(got) != len(tt.expected) {
+				t.Fatalf("ParsePaths() returned %d paths, want %d", len(got), len(tt.expected))
+			}
+			for i, p := range got {
+				if p != tt.expected[i] {
+					t.Errorf("ParsePaths()[%d] = %q, want %q", i, p, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkReadPathsFromFile(b *testing.B) {
 	var lines []string
 	for i := 0; i < 100; i++ {

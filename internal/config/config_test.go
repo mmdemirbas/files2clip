@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -17,30 +18,37 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.MaxFiles != 1000 {
 		t.Errorf("MaxFiles = %d, want 1000", cfg.MaxFiles)
 	}
+	if cfg.FullPaths {
+		t.Error("FullPaths should default to false")
+	}
+	if cfg.IgnoreFile != "" {
+		t.Errorf("IgnoreFile should default to empty, got %q", cfg.IgnoreFile)
+	}
 }
 
 func TestParseSize(t *testing.T) {
 	tests := []struct {
+		name     string
 		input    string
 		expected int64
 		wantErr  bool
 	}{
-		{"1000", 1000, false},
-		{"0", 0, false},
-		{"10MB", 10_000_000, false},
-		{"10mb", 10_000_000, false},
-		{"10 MB", 10_000_000, false},
-		{"1.5GB", 1_500_000_000, false},
-		{"500KB", 500_000, false},
-		{"2.5kb", 2500, false},
-		{"", 0, true},
-		{"-1MB", 0, true},
-		{"abc", 0, true},
-		{"MB", 0, true},
+		{"plain bytes", "1000", 1000, false},
+		{"zero", "0", 0, false},
+		{"megabytes upper", "10MB", 10_000_000, false},
+		{"megabytes lower", "10mb", 10_000_000, false},
+		{"megabytes with space", "10 MB", 10_000_000, false},
+		{"gigabytes fractional", "1.5GB", 1_500_000_000, false},
+		{"kilobytes", "500KB", 500_000, false},
+		{"kilobytes fractional lower", "2.5kb", 2500, false},
+		{"empty string", "", 0, true},
+		{"negative", "-1MB", 0, true},
+		{"non-numeric", "abc", 0, true},
+		{"suffix only", "MB", 0, true},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			got, err := ParseSize(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ParseSize(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
@@ -57,9 +65,16 @@ func TestFormatSize(t *testing.T) {
 		bytes    int64
 		expected string
 	}{
+		{0, "0 B"},
 		{500, "500 B"},
+		{999, "999 B"},
+		{1000, "1.0 KB"},
 		{1500, "1.5 KB"},
+		{999_999, "1000.0 KB"},
+		{1_000_000, "1.0 MB"},
 		{10_000_000, "10.0 MB"},
+		{999_999_999, "1000.0 MB"},
+		{1_000_000_000, "1.0 GB"},
 		{1_500_000_000, "1.5 GB"},
 	}
 
@@ -90,6 +105,13 @@ func TestLoadFromFile(t *testing.T) {
 		}
 		if cfg.MaxFiles != 500 {
 			t.Errorf("MaxFiles = %d, want 500", cfg.MaxFiles)
+		}
+		// Unset fields should keep their defaults
+		if cfg.FullPaths {
+			t.Error("FullPaths should remain default false")
+		}
+		if cfg.IgnoreFile != "" {
+			t.Errorf("IgnoreFile should remain default empty, got %q", cfg.IgnoreFile)
 		}
 	})
 
@@ -125,6 +147,36 @@ func TestLoadFromFile(t *testing.T) {
 		}
 	})
 
+	t.Run("full_paths variants", func(t *testing.T) {
+		for _, tc := range []struct {
+			value string
+			want  bool
+		}{
+			{"true", true},
+			{"yes", true},
+			{"1", true},
+			{"TRUE", true},
+			{"Yes", true},
+			{"false", false},
+			{"no", false},
+			{"0", false},
+			{"anything", false},
+		} {
+			t.Run("full_paths="+tc.value, func(t *testing.T) {
+				content := "full_paths = " + tc.value + "\n"
+				path := writeTempConfig(t, content)
+
+				cfg, err := LoadFromFile(path)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if cfg.FullPaths != tc.want {
+					t.Errorf("got %v, want %v", cfg.FullPaths, tc.want)
+				}
+			})
+		}
+	})
+
 	t.Run("empty file uses defaults", func(t *testing.T) {
 		path := writeTempConfig(t, "")
 
@@ -132,9 +184,8 @@ func TestLoadFromFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		defaults := DefaultConfig()
-		if cfg != defaults {
-			t.Errorf("empty config should equal defaults: got %+v, want %+v", cfg, defaults)
+		if cfg != DefaultConfig() {
+			t.Errorf("empty config should equal defaults: got %+v, want %+v", cfg, DefaultConfig())
 		}
 	})
 
@@ -146,35 +197,53 @@ func TestLoadFromFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		defaults := DefaultConfig()
-		if cfg != defaults {
-			t.Errorf("comments-only config should equal defaults")
+		if cfg != DefaultConfig() {
+			t.Error("comments-only config should equal defaults")
 		}
 	})
 
 	t.Run("invalid syntax", func(t *testing.T) {
-		content := "no_equals_sign\n"
-		path := writeTempConfig(t, content)
-
-		_, err := LoadFromFile(path)
-		if err == nil {
+		path := writeTempConfig(t, "no_equals_sign\n")
+		if _, err := LoadFromFile(path); err == nil {
 			t.Fatal("expected error for invalid syntax")
 		}
 	})
 
-	t.Run("invalid size value", func(t *testing.T) {
-		content := "max_file_size = notanumber\n"
-		path := writeTempConfig(t, content)
+	t.Run("invalid max_file_size", func(t *testing.T) {
+		path := writeTempConfig(t, "max_file_size = notanumber\n")
+		if _, err := LoadFromFile(path); err == nil {
+			t.Fatal("expected error for invalid max_file_size")
+		}
+	})
 
-		_, err := LoadFromFile(path)
-		if err == nil {
-			t.Fatal("expected error for invalid size")
+	t.Run("invalid max_total_size", func(t *testing.T) {
+		path := writeTempConfig(t, "max_total_size = notanumber\n")
+		if _, err := LoadFromFile(path); err == nil {
+			t.Fatal("expected error for invalid max_total_size")
+		}
+	})
+
+	t.Run("invalid max_files", func(t *testing.T) {
+		path := writeTempConfig(t, "max_files = notanumber\n")
+		if _, err := LoadFromFile(path); err == nil {
+			t.Fatal("expected error for invalid max_files")
+		}
+	})
+
+	t.Run("unknown key does not error", func(t *testing.T) {
+		path := writeTempConfig(t, "unknown_key = value\n")
+
+		cfg, err := LoadFromFile(path)
+		if err != nil {
+			t.Fatalf("unknown key should not cause error: %v", err)
+		}
+		if cfg != DefaultConfig() {
+			t.Errorf("unknown key should not change defaults: got %+v", cfg)
 		}
 	})
 
 	t.Run("nonexistent file", func(t *testing.T) {
-		_, err := LoadFromFile("/nonexistent/config")
-		if err == nil {
+		if _, err := LoadFromFile("/nonexistent/config"); err == nil {
 			t.Fatal("expected error for nonexistent file")
 		}
 	})
@@ -194,6 +263,19 @@ func TestLoadFromFile(t *testing.T) {
 			t.Errorf("MaxFileSize = %d, want 1000000", cfg.MaxFileSize)
 		}
 	})
+}
+
+func TestConfigFilePath(t *testing.T) {
+	path, err := ConfigFilePath()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path == "" {
+		t.Fatal("expected non-empty path")
+	}
+	if !strings.HasSuffix(path, filepath.Join("files2clip", "config")) {
+		t.Errorf("path %q should end with files2clip/config", path)
+	}
 }
 
 func BenchmarkParseSize(b *testing.B) {

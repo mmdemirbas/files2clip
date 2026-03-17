@@ -1,6 +1,10 @@
 package ignore
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestMatch(t *testing.T) {
 	tests := []struct {
@@ -27,14 +31,22 @@ func TestMatch(t *testing.T) {
 		{"anchored match", "src/*.go", "src/main.go", false, true},
 		{"anchored no match deeper", "src/*.go", "src/sub/main.go", false, false},
 		{"anchored no match other dir", "src/*.go", "other/main.go", false, false},
+		{"anchored dir path", "vendor/pkg", "vendor/pkg", false, true},
+		{"anchored dir path no partial", "vendor/pkg", "vendor/pkgs", false, false},
 
 		// ── Leading / anchor ──
 		{"leading slash", "/build", "build", false, true},
 		{"leading slash no deep match", "/build", "src/build", false, false},
 		{"leading slash with wildcard", "/*.go", "main.go", false, true},
 		{"leading slash wildcard no deep", "/*.go", "src/main.go", false, false},
+		{"leading slash dir on dir", "/build/", "build", true, true},
+		{"leading slash dir on file", "/build/", "build", false, false},
+		{"leading slash dir nested", "/build/", "src/build", true, false},
 
 		// ── ** (double star) patterns ──
+		// bare **
+		{"bare doublestar", "**", "anything/at/all", false, true},
+		{"bare doublestar file", "**", "file.txt", false, true},
 		// leading **/
 		{"doublestar prefix", "**/foo", "foo", false, true},
 		{"doublestar prefix nested", "**/foo", "a/b/foo", false, true},
@@ -50,6 +62,10 @@ func TestMatch(t *testing.T) {
 		{"doublestar middle deep", "a/**/z", "a/b/c/d/z", false, true},
 		{"doublestar middle with wildcard", "src/**/*.test.go", "src/pkg/handler.test.go", false, true},
 		{"doublestar middle with wildcard deep", "src/**/*.test.go", "src/a/b/c.test.go", false, true},
+		{"doublestar no match", "a/**/impossible.xyz", "a/b/c/d.go", false, false},
+		// multiple **
+		{"multi doublestar", "a/**/b/**/c", "a/x/b/y/c", false, true},
+		{"multi doublestar zero", "a/**/b/**/c", "a/b/c", false, true},
 
 		// ** not adjacent to / (treated as two regular *)
 		{"star star no sep", "a**.go", "abc.go", false, true},
@@ -59,7 +75,8 @@ func TestMatch(t *testing.T) {
 		{"negation excludes", "*.log\n!important.log", "debug.log", false, true},
 		{"negation re-includes", "*.log\n!important.log", "important.log", false, false},
 		{"double negation", "*.log\n!important.log\n*.log", "important.log", false, true},
-		{"negation with path", "build/\n!build/release/", "build/release", true, false},
+		{"negation with dir", "build/\n!build/release/", "build/release", true, false},
+		{"negate dir-only", "build/\n!build/", "build", true, false},
 
 		// ── Character classes [...] ──
 		{"char class simple", "*.[oa]", "test.o", false, true},
@@ -68,8 +85,8 @@ func TestMatch(t *testing.T) {
 		{"char class range", "[Tt]est", "Test", false, true},
 		{"char class range lower", "[Tt]est", "test", false, true},
 		{"char class range no match", "[Tt]est", "Best", false, false},
-		{"char class negated", "*.[!o]", "test.a", false, true},
-		{"char class negated no match", "*.[!o]", "test.o", false, false},
+		{"char class negated bang", "*.[!o]", "test.a", false, true},
+		{"char class negated bang no match", "*.[!o]", "test.o", false, false},
 		{"char class range a-z", "[a-z].txt", "m.txt", false, true},
 		{"char class range a-z no match", "[a-z].txt", "M.txt", false, false},
 
@@ -90,8 +107,12 @@ func TestMatch(t *testing.T) {
 
 		// ── Edge cases ──
 		{"empty path", "*.log", "", false, false},
-		{"root path", "*.go", "/main.go", false, true},
+		{"empty pattern text", "", "anything", false, false},
+		{"root path normalized", "*.go", "/main.go", false, true},
 		{"absolute path normalized", "*.go", "/src/main.go", false, true},
+		{"no match at all", "*.xyz", "file.abc", false, false},
+		{"pattern longer than path", "a/b/c/d", "a/b", false, false},
+		{"malformed bracket", "[unclosed", "u", false, false},
 	}
 
 	for _, tt := range tests {
@@ -107,31 +128,57 @@ func TestMatch(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
-	a := Parse("*.log")
-	b := Parse("*.txt")
-	merged := Merge(a, b)
+	t.Run("combine two matchers", func(t *testing.T) {
+		a := Parse("*.log")
+		b := Parse("*.txt")
+		merged := Merge(a, b)
 
-	if !merged.Match("foo.log", false) {
-		t.Error("merged should match *.log")
-	}
-	if !merged.Match("foo.txt", false) {
-		t.Error("merged should match *.txt")
-	}
-	if merged.Match("foo.go", false) {
-		t.Error("merged should not match *.go")
-	}
-}
+		if !merged.Match("foo.log", false) {
+			t.Error("merged should match *.log")
+		}
+		if !merged.Match("foo.txt", false) {
+			t.Error("merged should match *.txt")
+		}
+		if merged.Match("foo.go", false) {
+			t.Error("merged should not match *.go")
+		}
+	})
 
-func TestMergeNil(t *testing.T) {
-	a := Parse("*.log")
-	merged := Merge(nil, a)
-	if !merged.Match("foo.log", false) {
-		t.Error("merge with nil should still work")
-	}
-	merged = Merge(a, nil)
-	if !merged.Match("foo.log", false) {
-		t.Error("merge with nil should still work")
-	}
+	t.Run("nil first", func(t *testing.T) {
+		b := Parse("*.log")
+		merged := Merge(nil, b)
+		if !merged.Match("foo.log", false) {
+			t.Error("Merge(nil, b) should match b's patterns")
+		}
+	})
+
+	t.Run("nil second", func(t *testing.T) {
+		a := Parse("*.log")
+		merged := Merge(a, nil)
+		if !merged.Match("foo.log", false) {
+			t.Error("Merge(a, nil) should match a's patterns")
+		}
+	})
+
+	t.Run("both nil", func(t *testing.T) {
+		merged := Merge(nil, nil)
+		if merged.Match("foo.log", false) {
+			t.Error("Merge(nil, nil) should not match anything")
+		}
+	})
+
+	t.Run("negation across merge", func(t *testing.T) {
+		a := Parse("*.log")
+		b := Parse("!important.log")
+		merged := Merge(a, b)
+
+		if !merged.Match("debug.log", false) {
+			t.Error("debug.log should still be excluded")
+		}
+		if merged.Match("important.log", false) {
+			t.Error("important.log should be re-included by negation from b")
+		}
+	})
 }
 
 func TestNilMatcher(t *testing.T) {
@@ -146,6 +193,28 @@ func TestLoadFile(t *testing.T) {
 		_, err := LoadFile("/nonexistent/ignore")
 		if err == nil {
 			t.Error("expected error for nonexistent file")
+		}
+	})
+
+	t.Run("valid file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "ignore")
+		if err := os.WriteFile(path, []byte("*.log\nnode_modules/\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		m, err := LoadFile(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !m.Match("debug.log", false) {
+			t.Error("should match *.log")
+		}
+		if !m.Match("node_modules", true) {
+			t.Error("should match node_modules/")
+		}
+		if m.Match("main.go", false) {
+			t.Error("should not match main.go")
 		}
 	})
 }
