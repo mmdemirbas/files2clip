@@ -11,6 +11,7 @@ import (
 
 	"github.com/mmdemirbas/files2clip/internal/clipboard"
 	"github.com/mmdemirbas/files2clip/internal/config"
+	"github.com/mmdemirbas/files2clip/internal/fileutil"
 	"github.com/mmdemirbas/files2clip/internal/ignore"
 	"github.com/mmdemirbas/files2clip/internal/pathutil"
 	"github.com/mmdemirbas/files2clip/internal/style"
@@ -42,6 +43,7 @@ func run() int {
 	fromClipboard := flag.Bool("from-clipboard", false, "read paths from clipboard")
 	inputFile := flag.String("file", "", "read paths from a file (one path per line)")
 	flag.StringVar(inputFile, "f", "", "read paths from a file (shorthand)")
+	includeBinary := flag.Bool("include-binary", false, "include binary files (skipped by default)")
 	var excludes stringSliceFlag
 	flag.Var(&excludes, "exclude", "exclude pattern (gitignore-style, repeatable)")
 	flag.Var(&excludes, "e", "exclude pattern (shorthand)")
@@ -59,6 +61,7 @@ func run() int {
 		printFlag("--version", "print version and exit")
 		printFlag("--verbose", "show detailed processing info")
 		printFlag("--full-paths", "use absolute paths in output")
+		printFlag("--include-binary", "include binary files (skipped by default)")
 		printFlag("-e, --exclude <pattern>", "exclude pattern (gitignore-style, repeatable)")
 		printFlag("--ignore-file <path>", "gitignore-style file for excluding paths")
 		printFlag("--max-file-size <size>", "max individual file size (e.g., 10MB)")
@@ -66,7 +69,7 @@ func run() int {
 		printFlag("--max-files <n>", "max number of files to process")
 		fmt.Fprintf(os.Stderr, "\nConfig file: %s\n", configFileHint())
 		fmt.Fprintf(os.Stderr, "  Supported keys: max_file_size, max_total_size, max_files,\n")
-		fmt.Fprintf(os.Stderr, "                  full_paths, ignore_file\n")
+		fmt.Fprintf(os.Stderr, "                  full_paths, ignore_file, include_binary\n")
 	}
 
 	flag.Parse()
@@ -105,7 +108,7 @@ func run() int {
 			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("config file error: %v", err)))
 		}
 	}
-	applyCLIOverrides(&cfg, *maxFileSizeStr, *maxTotalSizeStr, *maxFilesFlag, *fullPaths, *ignoreFile)
+	applyCLIOverrides(&cfg, *maxFileSizeStr, *maxTotalSizeStr, *maxFilesFlag, *fullPaths, *ignoreFile, *includeBinary)
 
 	if *verbose {
 		fmt.Fprintln(os.Stderr, style.Info(fmt.Sprintf(
@@ -222,6 +225,11 @@ func run() int {
 			continue
 		}
 
+		if !cfg.IncludeBinary && fileutil.IsBinary(data) {
+			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — binary file", displayPath)))
+			continue
+		}
+
 		entry := fmt.Sprintf("%s:\n```\n%s\n```", displayPath, string(data))
 
 		// Check max_total_size limit
@@ -280,7 +288,7 @@ func printFlag(name, desc string) {
 	fmt.Fprintf(os.Stderr, "  %-26s %s\n", name, desc)
 }
 
-func applyCLIOverrides(cfg *config.Config, maxFileSize, maxTotalSize string, maxFiles int, fullPaths bool, ignoreFile string) {
+func applyCLIOverrides(cfg *config.Config, maxFileSize, maxTotalSize string, maxFiles int, fullPaths bool, ignoreFile string, includeBinary bool) {
 	if maxFileSize != "" {
 		if n, err := config.ParseSize(maxFileSize); err == nil {
 			cfg.MaxFileSize = n
@@ -303,6 +311,9 @@ func applyCLIOverrides(cfg *config.Config, maxFileSize, maxTotalSize string, max
 	}
 	if ignoreFile != "" {
 		cfg.IgnoreFile = ignoreFile
+	}
+	if includeBinary {
+		cfg.IncludeBinary = true
 	}
 }
 

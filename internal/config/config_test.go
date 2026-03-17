@@ -24,6 +24,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.IgnoreFile != "" {
 		t.Errorf("IgnoreFile should default to empty, got %q", cfg.IgnoreFile)
 	}
+	if cfg.IncludeBinary {
+		t.Error("IncludeBinary should default to false")
+	}
 }
 
 func TestParseSize(t *testing.T) {
@@ -144,6 +147,19 @@ func TestLoadFromFile(t *testing.T) {
 		}
 		if cfg.IgnoreFile != "~/.config/files2clip/ignore" {
 			t.Errorf("IgnoreFile = %q, want %q", cfg.IgnoreFile, "~/.config/files2clip/ignore")
+		}
+	})
+
+	t.Run("include_binary", func(t *testing.T) {
+		content := "include_binary = true\n"
+		path := writeTempConfig(t, content)
+
+		cfg, err := LoadFromFile(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.IncludeBinary {
+			t.Error("IncludeBinary should be true")
 		}
 	})
 
