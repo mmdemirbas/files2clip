@@ -18,6 +18,31 @@ func Set(data []byte) error {
 	return cmd.Run()
 }
 
+// Get reads text data from the system clipboard.
+func Get() ([]byte, error) {
+	cmdName, args, err := readCmd()
+	if err != nil {
+		return nil, err
+	}
+	return exec.Command(cmdName, args...).Output()
+}
+
+func readCmd() (string, []string, error) {
+	switch runtime.GOOS {
+	case "windows":
+		return "powershell", []string{
+			"-NoProfile", "-NonInteractive",
+			"-Command", "Get-Clipboard",
+		}, nil
+	case "darwin":
+		return "pbpaste", []string{}, nil
+	case "linux":
+		return "xclip", []string{"-selection", "clipboard", "-o"}, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+}
+
 func writeCmd() (string, []string, error) {
 	switch runtime.GOOS {
 	case "windows":

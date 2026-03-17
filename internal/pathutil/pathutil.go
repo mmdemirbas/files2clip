@@ -26,7 +26,13 @@ func ReadPathsFromFile(filePath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(string(data), "\n")
+	return ParsePaths(string(data)), nil
+}
+
+// ParsePaths extracts paths from text content.
+// Empty lines and lines starting with # are ignored.
+func ParsePaths(text string) []string {
+	lines := strings.Split(text, "\n")
 	var effective []string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -34,5 +40,5 @@ func ReadPathsFromFile(filePath string) ([]string, error) {
 			effective = append(effective, trimmed)
 		}
 	}
-	return effective, nil
+	return effective
 }

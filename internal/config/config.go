@@ -10,9 +10,11 @@ import (
 
 // Config holds runtime limits for files2clip.
 type Config struct {
-	MaxFileSize  int64 // max bytes per file, 0 = unlimited
-	MaxTotalSize int64 // max bytes total content, 0 = unlimited
-	MaxFiles     int   // max number of files, 0 = unlimited
+	MaxFileSize  int64  // max bytes per file, 0 = unlimited
+	MaxTotalSize int64  // max bytes total content, 0 = unlimited
+	MaxFiles     int    // max number of files, 0 = unlimited
+	FullPaths    bool   // use absolute paths instead of relative
+	IgnoreFile   string // path to gitignore-style ignore file
 }
 
 // DefaultConfig returns sensible defaults.
@@ -77,12 +79,21 @@ func LoadFromFile(path string) (Config, error) {
 				return cfg, fmt.Errorf("line %d: max_files: %w", i+1, err)
 			}
 			cfg.MaxFiles = n
+		case "full_paths":
+			cfg.FullPaths = parseBool(value)
+		case "ignore_file":
+			cfg.IgnoreFile = value
 		default:
 			fmt.Fprintf(os.Stderr, "config: unknown key %q on line %d\n", key, i+1)
 		}
 	}
 
 	return cfg, nil
+}
+
+func parseBool(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s == "true" || s == "yes" || s == "1"
 }
 
 // ParseSize converts a human-readable size string to bytes.

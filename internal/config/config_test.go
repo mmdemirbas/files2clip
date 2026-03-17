@@ -109,6 +109,22 @@ func TestLoadFromFile(t *testing.T) {
 		}
 	})
 
+	t.Run("full_paths and ignore_file", func(t *testing.T) {
+		content := "full_paths = true\nignore_file = ~/.config/files2clip/ignore\n"
+		path := writeTempConfig(t, content)
+
+		cfg, err := LoadFromFile(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.FullPaths {
+			t.Error("FullPaths should be true")
+		}
+		if cfg.IgnoreFile != "~/.config/files2clip/ignore" {
+			t.Errorf("IgnoreFile = %q, want %q", cfg.IgnoreFile, "~/.config/files2clip/ignore")
+		}
+	})
+
 	t.Run("empty file uses defaults", func(t *testing.T) {
 		path := writeTempConfig(t, "")
 
