@@ -1,8 +1,11 @@
 package pathutil
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -32,101 +35,60 @@ func TestIsExcluded(t *testing.T) {
 }
 
 func TestReadPathsFromFile(t *testing.T) {
-	t.Run("normal file with paths", func(t *testing.T) {
-		content := "/path/to/file1.txt\n/path/to/file2.txt\n/path/to/dir\n"
-		path := writeTempFile(t, content)
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:    "normal file with paths",
+			content: "/path/to/file1.txt\n/path/to/file2.txt\n/path/to/dir\n",
+			want:    []string{"/path/to/file1.txt", "/path/to/file2.txt", "/path/to/dir"},
+		},
+		{
+			name:    "file with comments and empty lines",
+			content: "# This is a comment\n\n/path/to/file.txt\n\n# Another comment\n/path/to/other.txt\n",
+			want:    []string{"/path/to/file.txt", "/path/to/other.txt"},
+		},
+		{
+			name:    "empty file",
+			content: "",
+			want:    nil,
+		},
+		{
+			name:    "file with only comments",
+			content: "# comment 1\n# comment 2\n",
+			want:    nil,
+		},
+		{
+			name:    "whitespace trimming",
+			content: "  /path/to/file.txt  \n\t/path/to/other.txt\t\n",
+			want:    []string{"/path/to/file.txt", "/path/to/other.txt"},
+		},
+		{
+			name:    "windows line endings",
+			content: "/path/to/file1.txt\r\n/path/to/file2.txt\r\n",
+			want:    []string{"/path/to/file1.txt", "/path/to/file2.txt"},
+		},
+	}
 
-		paths, err := ReadPathsFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(paths) != 3 {
-			t.Fatalf("expected 3 paths, got %d", len(paths))
-		}
-		if paths[0] != "/path/to/file1.txt" {
-			t.Errorf("paths[0] = %q, want %q", paths[0], "/path/to/file1.txt")
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTempFile(t, tt.content)
 
-	t.Run("file with comments and empty lines", func(t *testing.T) {
-		content := "# This is a comment\n\n/path/to/file.txt\n\n# Another comment\n/path/to/other.txt\n"
-		path := writeTempFile(t, content)
-
-		paths, err := ReadPathsFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(paths) != 2 {
-			t.Fatalf("expected 2 paths, got %d", len(paths))
-		}
-	})
-
-	t.Run("empty file", func(t *testing.T) {
-		path := writeTempFile(t, "")
-
-		paths, err := ReadPathsFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(paths) != 0 {
-			t.Fatalf("expected 0 paths, got %d", len(paths))
-		}
-	})
-
-	t.Run("file with only comments", func(t *testing.T) {
-		content := "# comment 1\n# comment 2\n"
-		path := writeTempFile(t, content)
-
-		paths, err := ReadPathsFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(paths) != 0 {
-			t.Fatalf("expected 0 paths, got %d", len(paths))
-		}
-	})
-
-	t.Run("whitespace trimming", func(t *testing.T) {
-		content := "  /path/to/file.txt  \n\t/path/to/other.txt\t\n"
-		path := writeTempFile(t, content)
-
-		paths, err := ReadPathsFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(paths) != 2 {
-			t.Fatalf("expected 2 paths, got %d", len(paths))
-		}
-		if paths[0] != "/path/to/file.txt" {
-			t.Errorf("paths[0] = %q, want %q", paths[0], "/path/to/file.txt")
-		}
-		if paths[1] != "/path/to/other.txt" {
-			t.Errorf("paths[1] = %q, want %q", paths[1], "/path/to/other.txt")
-		}
-	})
-
-	t.Run("windows line endings", func(t *testing.T) {
-		content := "/path/to/file1.txt\r\n/path/to/file2.txt\r\n"
-		path := writeTempFile(t, content)
-
-		paths, err := ReadPathsFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(paths) != 2 {
-			t.Fatalf("expected 2 paths, got %d", len(paths))
-		}
-		if paths[0] != "/path/to/file1.txt" {
-			t.Errorf("paths[0] = %q, want %q", paths[0], "/path/to/file1.txt")
-		}
-		if paths[1] != "/path/to/file2.txt" {
-			t.Errorf("paths[1] = %q, want %q", paths[1], "/path/to/file2.txt")
-		}
-	})
+			got, err := ReadPathsFromFile(path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
 
 	t.Run("nonexistent file", func(t *testing.T) {
-		_, err := ReadPathsFromFile("/nonexistent/file.txt")
-		if err == nil {
+		if _, err := ReadPathsFromFile("/nonexistent/file.txt"); err == nil {
 			t.Fatal("expected error for nonexistent file")
 		}
 	})
@@ -134,9 +96,9 @@ func TestReadPathsFromFile(t *testing.T) {
 
 func TestParsePaths(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected []string
+		name  string
+		input string
+		want  []string
 	}{
 		{"simple paths", "/a\n/b\n/c\n", []string{"/a", "/b", "/c"}},
 		{"with comments", "# comment\n/a\n# another\n/b\n", []string{"/a", "/b"}},
@@ -151,30 +113,21 @@ func TestParsePaths(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ParsePaths(tt.input)
-			if len(got) != len(tt.expected) {
-				t.Fatalf("ParsePaths() returned %d paths, want %d", len(got), len(tt.expected))
-			}
-			for i, p := range got {
-				if p != tt.expected[i] {
-					t.Errorf("ParsePaths()[%d] = %q, want %q", i, p, tt.expected[i])
-				}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ParsePaths() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
 func BenchmarkReadPathsFromFile(b *testing.B) {
-	var lines []string
-	for i := 0; i < 100; i++ {
-		lines = append(lines, "/some/path/to/file"+string(rune('0'+i%10))+".go")
-	}
-	content := ""
-	for _, l := range lines {
-		content += l + "\n"
+	var buf strings.Builder
+	for i := range 100 {
+		fmt.Fprintf(&buf, "/some/path/to/file%d.go\n", i)
 	}
 	dir := b.TempDir()
 	path := filepath.Join(dir, "paths.txt")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(buf.String()), 0644); err != nil {
 		b.Fatal(err)
 	}
 
