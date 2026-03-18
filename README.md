@@ -2,7 +2,7 @@
 
 Collect file contents and copy the formatted result to the system clipboard.
 
-Reads file and directory paths from a text file, gathers their contents, and copies everything to the clipboard in a markdown-friendly format — ready to paste into an LLM, a document, or an issue.
+Pass file and directory paths as arguments, from a file, or from the clipboard. files2clip gathers their contents and copies everything to the clipboard in a markdown-friendly format — ready to paste into an LLM, a document, or an issue.
 
 ## Install
 
@@ -15,32 +15,24 @@ Or download a pre-built binary from [Releases](https://github.com/mmdemirbas/fil
 ## Usage
 
 ```sh
-files2clip <paths-file>
-```
+# Pass paths directly as arguments
+files2clip src/main.go src/util.go docs/
 
-The paths file contains one file or directory path per line. Empty lines and lines starting with `#` are ignored.
+# Read paths from a file (one per line, # for comments)
+files2clip -f paths.txt
 
-Example `paths.txt`:
-
-```
-# Project source files
-src/main.go
-src/util.go
-docs/
-```
-
-```sh
-files2clip paths.txt
+# Read paths from clipboard
+files2clip --from-clipboard
 ```
 
 Output:
 
 ```
-  OK main.go
-  OK util.go
-  OK docs/guide.md
+  ✓ main.go
+  ✓ util.go
+  ✓ docs/guide.md
 
-3/3 files copied, relative to /home/user/project/
+✔ 3/3 files copied, relative to /home/user/project/
 ```
 
 The formatted content is now on your clipboard.
@@ -49,16 +41,37 @@ The formatted content is now on your clipboard.
 
 | Flag | Description |
 |------|-------------|
-| `--help` | Show usage |
 | `--version` | Print version and exit |
 | `--verbose` | Show config values, file sizes, and detailed info |
-| `--max-file-size` | Max individual file size, e.g., `10MB` (overrides config) |
-| `--max-total-size` | Max total content size, e.g., `50MB` (overrides config) |
-| `--max-files` | Max number of files to process (overrides config) |
+| `-f`, `--file <path>` | Read paths from a file (one per line) |
+| `--from-clipboard` | Read paths from the system clipboard |
+| `--full-paths` | Use absolute paths in output instead of relative |
+| `--include-binary` | Include binary files (skipped by default) |
+| `-e`, `--exclude <pattern>` | Exclude files matching a gitignore-style pattern (repeatable) |
+| `--ignore-file <path>` | Path to a gitignore-style file for excluding paths |
+| `--max-file-size <size>` | Max individual file size, e.g., `10MB` |
+| `--max-total-size <size>` | Max total content size, e.g., `50MB` |
+| `--max-files <n>` | Max number of files to process |
+
+Input modes (`<path>...`, `-f`, `--from-clipboard`) are mutually exclusive.
+
+### Exclude patterns
+
+Exclude patterns follow gitignore syntax:
+
+```sh
+# Skip test files and the vendor directory
+files2clip -e "*.test.go" -e "vendor/" src/
+
+# Use an ignore file for persistent exclusions
+files2clip --ignore-file .clipignore src/
+```
+
+Supported pattern syntax: `*`, `?`, `**`, `[abc]`, `[a-z]`, `[!x]`, `!` negation, `#` comments, trailing `/` for directories, leading `/` for anchoring.
 
 ## Config
 
-An optional config file sets default limits. Location varies by OS:
+An optional config file sets default values. Location varies by OS:
 
 | OS | Path |
 |----|------|
@@ -77,6 +90,15 @@ max_total_size = 50MB
 
 # Max number of files to process
 max_files = 1000
+
+# Use absolute paths instead of relative
+full_paths = false
+
+# Path to a gitignore-style exclusion file
+ignore_file = ~/.config/files2clip/ignore
+
+# Include binary files (skipped by default)
+include_binary = false
 ```
 
 Size values accept `KB`, `MB`, `GB` suffixes (case-insensitive). Plain numbers are bytes.
@@ -86,14 +108,16 @@ CLI flags override config file values, which override built-in defaults.
 When a limit is reached, files2clip reports it explicitly:
 
 ```
-LIMIT max_files=1000 reached, stopping
-SKIP large-file.bin — exceeds max file size (15.0 MB > 10.0 MB)
+  ⚠ max_files=1000 reached, stopping
+  ⊘ large-file.bin — exceeds max file size (15.0 MB > 10.0 MB)
+  ⊘ image.png — binary file
 ```
 
 ## Requirements
 
-- **macOS**: `pbcopy` (built-in)
-- **Linux**: `xclip` (`sudo apt install xclip`)
+- **macOS**: `pbcopy` / `pbpaste` (built-in)
+- **Linux (X11)**: `xclip` (`sudo apt install xclip`)
+- **Linux (Wayland)**: `wl-clipboard` (`sudo apt install wl-clipboard`) — preferred when `WAYLAND_DISPLAY` is set, falls back to `xclip`
 - **Windows**: PowerShell (built-in)
 
 ## Build from source
@@ -108,7 +132,13 @@ task bench          # run benchmarks
 task dist           # cross-compile all platforms
 task all            # test + lint + dist
 task clean          # remove build artifacts
-task setup:unix     # install xclip on Linux
+task setup:unix     # install clipboard tools on Linux
+```
+
+Set version at build time:
+
+```sh
+task build VERSION=v1.0.0
 ```
 
 ## License
