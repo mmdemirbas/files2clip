@@ -2,5 +2,18 @@
 build/
 dist/
 
-# IntelliJ IDEA
+# IDE
 .idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test/profile
+*.out
+*.prof
+*.test

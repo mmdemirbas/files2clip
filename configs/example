@@ -1,0 +1,26 @@
+# files2clip configuration
+#
+# Place this file at:
+#   Linux:   ~/.config/files2clip/config
+#   macOS:   ~/Library/Application Support/files2clip/config
+#   Windows: %AppData%\files2clip\config
+#
+# CLI flags override these values.
+
+# Max size per individual file (supports KB, MB, GB suffixes)
+max_file_size = 10MB
+
+# Max total clipboard content size
+max_total_size = 50MB
+
+# Max number of files to process (0 = unlimited)
+max_files = 1000
+
+# Use absolute paths instead of relative paths in output
+full_paths = false
+
+# Path to a gitignore-style file for excluding paths
+# ignore_file = ~/.config/files2clip/ignore
+
+# Include binary files (they are skipped by default)
+include_binary = false

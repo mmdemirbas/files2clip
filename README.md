@@ -1,5 +1,9 @@
 # files2clip
 
+[![CI](https://github.com/mmdemirbas/files2clip/actions/workflows/ci.yml/badge.svg)](https://github.com/mmdemirbas/files2clip/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/github/go-mod/go-version/mmdemirbas/files2clip)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Collect file contents and copy the formatted result to the system clipboard.
 
 Pass file and directory paths as arguments, from a file, or from the clipboard. files2clip gathers their contents and copies everything to the clipboard in a markdown-friendly format — ready to paste into an LLM, a document, or an issue.

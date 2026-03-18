@@ -5,9 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/mmdemirbas/files2clip/internal/clipboard"
@@ -433,13 +431,4 @@ func configFileHint() string {
 		return p
 	}
 	return "(could not determine path)"
-}
-
-func beep() {
-	switch runtime.GOOS {
-	case "windows":
-		fmt.Print("\a")
-	case "darwin":
-		exec.Command("osascript", "-e", "beep").Run()
-	}
 }

@@ -219,6 +219,23 @@ func TestLoadFile(t *testing.T) {
 	})
 }
 
+func FuzzMatch(f *testing.F) {
+	f.Add("*.log", "debug.log", false)
+	f.Add("src/**/*.go", "src/main.go", false)
+	f.Add("build/", "build", true)
+	f.Add("!important.log", "important.log", false)
+	f.Add("*.[!o]", "test.a", false)
+	f.Add("[unclosed", "u", false)
+	f.Add("**", "a/b/c", false)
+	f.Add("", "", false)
+
+	f.Fuzz(func(t *testing.T, pattern, path string, isDir bool) {
+		m := Parse(pattern)
+		// Must not panic
+		m.Match(path, isDir)
+	})
+}
+
 func BenchmarkParse(b *testing.B) {
 	text := "*.log\nnode_modules/\nsrc/**/*.test.go\n!important.log\n*.o\n*.a\nbuild/\ndist/\n"
 	for b.Loop() {

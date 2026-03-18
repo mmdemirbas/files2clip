@@ -319,6 +319,41 @@ func BenchmarkLoadFromFile(b *testing.B) {
 	}
 }
 
+func FuzzParseSize(f *testing.F) {
+	f.Add("10MB")
+	f.Add("0")
+	f.Add("1.5GB")
+	f.Add("")
+	f.Add("-1MB")
+	f.Add("abc")
+	f.Add("MB")
+	f.Add("  500 KB  ")
+
+	f.Fuzz(func(t *testing.T, input string) {
+		// Must not panic
+		ParseSize(input)
+	})
+}
+
+func FuzzLoadFromFile(f *testing.F) {
+	f.Add("max_file_size = 10MB\nmax_files = 100\n")
+	f.Add("# comment\n\nmax_files = 42\n")
+	f.Add("")
+	f.Add("bad line\n")
+	f.Add("unknown = value\n")
+	f.Add("full_paths = true\ninclude_binary = yes\n")
+
+	f.Fuzz(func(t *testing.T, content string) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		// Must not panic
+		LoadFromFile(path)
+	})
+}
+
 func writeTempConfig(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

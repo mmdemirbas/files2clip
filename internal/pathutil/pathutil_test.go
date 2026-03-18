@@ -119,6 +119,19 @@ func TestParsePaths(t *testing.T) {
 	}
 }
 
+func FuzzParsePaths(f *testing.F) {
+	f.Add("/a\n/b\n/c\n")
+	f.Add("# comment\n/a\n")
+	f.Add("")
+	f.Add("  \n  \n")
+	f.Add("/a\r\n/b\r\n")
+
+	f.Fuzz(func(t *testing.T, input string) {
+		// Must not panic
+		ParsePaths(input)
+	})
+}
+
 func BenchmarkParsePaths(b *testing.B) {
 	var buf strings.Builder
 	for i := range 100 {
