@@ -379,7 +379,7 @@ func collectFiles(paths []string, verbose bool, ignoreMatcher *ignore.Matcher) [
 			continue
 		}
 
-		filepath.WalkDir(abs, func(path string, d os.DirEntry, err error) error {
+		_ = filepath.WalkDir(abs, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", path, err)))
 				return nil

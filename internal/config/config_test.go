@@ -302,7 +302,7 @@ func BenchmarkFormatSize(b *testing.B) {
 
 func BenchmarkParseSize(b *testing.B) {
 	for b.Loop() {
-		ParseSize("10MB")
+		_, _ = ParseSize("10MB")
 	}
 }
 
@@ -315,7 +315,7 @@ func BenchmarkLoadFromFile(b *testing.B) {
 	}
 
 	for b.Loop() {
-		LoadFromFile(path)
+		_, _ = LoadFromFile(path)
 	}
 }
 
@@ -330,8 +330,7 @@ func FuzzParseSize(f *testing.F) {
 	f.Add("  500 KB  ")
 
 	f.Fuzz(func(t *testing.T, input string) {
-		// Must not panic
-		ParseSize(input)
+		_, _ = ParseSize(input) // must not panic
 	})
 }
 
@@ -349,8 +348,7 @@ func FuzzLoadFromFile(f *testing.F) {
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatal(err)
 		}
-		// Must not panic
-		LoadFromFile(path)
+		_, _ = LoadFromFile(path) // must not panic
 	})
 }
 

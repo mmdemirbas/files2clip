@@ -3,5 +3,5 @@ package main
 import "os/exec"
 
 func beep() {
-	exec.Command("osascript", "-e", "beep").Run()
+	_ = exec.Command("osascript", "-e", "beep").Run() //nolint:errcheck // best-effort audible notification
 }
