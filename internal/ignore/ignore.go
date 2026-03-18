@@ -15,7 +15,7 @@ type pattern struct {
 	negated  bool
 	dirOnly  bool
 	anchored bool     // match against full path, not just basename
-	parts    []string // pattern split by "/" (with "**" preserved as-is)
+	parts    []string // pattern split by "/" — [!x] pre-converted to [^x] for filepath.Match
 }
 
 // LoadFile reads a gitignore-style file and returns a Matcher.
@@ -62,12 +62,7 @@ func Parse(text string) *Matcher {
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimRight(line, "\r")
 		line = strings.TrimSpace(line)
-		if line == "" || line == "#" {
-			continue
-		}
-
-		// Handle comments and escape/negation
-		if strings.HasPrefix(line, "#") {
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
@@ -98,7 +93,13 @@ func Parse(text string) *Matcher {
 			p.anchored = true
 		}
 
-		p.parts = strings.Split(line, "/")
+		parts := strings.Split(line, "/")
+		// Pre-convert [!x] to [^x] at parse time so matchComponent doesn't
+		// need to do it on every call.
+		for i, part := range parts {
+			parts[i] = convertCharClassNeg(part)
+		}
+		p.parts = parts
 		patterns = append(patterns, p)
 	}
 	return &Matcher{patterns: patterns}
@@ -115,6 +116,10 @@ func (m *Matcher) Match(path string, isDir bool) bool {
 	// Normalize to forward slashes and strip leading /
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
 
+	// Split once, reuse across all patterns
+	pathParts := strings.Split(path, "/")
+	base := pathParts[len(pathParts)-1]
+
 	matched := false
 	for _, p := range m.patterns {
 		if p.dirOnly && !isDir {
@@ -123,16 +128,15 @@ func (m *Matcher) Match(path string, isDir bool) bool {
 
 		var hit bool
 		if p.anchored {
-			hit = matchPath(p.parts, strings.Split(path, "/"))
+			hit = matchPath(p.parts, pathParts)
 		} else {
 			// Unanchored: try matching against basename first
-			base := filepath.Base(path)
 			if len(p.parts) == 1 {
 				hit = matchComponent(p.parts[0], base)
 			}
 			// Also try matching against the full path
 			if !hit {
-				hit = matchPath(p.parts, strings.Split(path, "/"))
+				hit = matchPath(p.parts, pathParts)
 			}
 		}
 
@@ -182,9 +186,9 @@ func doMatchParts(patParts, nameParts []string) bool {
 
 // matchComponent matches a single path component (no slashes).
 // Uses filepath.Match which supports *, ?, [...], and \ escaping.
-// Converts gitignore's [!...] negation to Go's [^...] syntax.
+// Pattern parts have [!x] pre-converted to [^x] at parse time.
 func matchComponent(pattern, name string) bool {
-	ok, err := filepath.Match(convertCharClassNeg(pattern), name)
+	ok, err := filepath.Match(pattern, name)
 	if err != nil {
 		return false // malformed pattern
 	}

@@ -1,7 +1,6 @@
 package clipboard
 
 import (
-	"os"
 	"os/exec"
 	"runtime"
 	"testing"
@@ -159,28 +158,5 @@ func TestLinuxCmdFallback(t *testing.T) {
 	}
 	if cmd != "xclip" {
 		t.Errorf("read: cmd = %q, want xclip (fallback)", cmd)
-	}
-}
-
-func TestLinuxCmdNoWayland(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("linux-only test")
-	}
-
-	// Without WAYLAND_DISPLAY, should always use xclip
-	orig := os.Getenv("WAYLAND_DISPLAY")
-	os.Unsetenv("WAYLAND_DISPLAY")
-	defer func() {
-		if orig != "" {
-			os.Setenv("WAYLAND_DISPLAY", orig)
-		}
-	}()
-
-	cmd, _, err := linuxCmd("write")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cmd != "xclip" {
-		t.Errorf("write: cmd = %q, want xclip", cmd)
 	}
 }

@@ -39,7 +39,6 @@ func TestReadPathsFromFile(t *testing.T) {
 		name    string
 		content string
 		want    []string
-		wantErr bool
 	}{
 		{
 			name:    "normal file with paths",
@@ -117,6 +116,18 @@ func TestParsePaths(t *testing.T) {
 				t.Errorf("ParsePaths() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func BenchmarkParsePaths(b *testing.B) {
+	var buf strings.Builder
+	for i := range 100 {
+		fmt.Fprintf(&buf, "/some/path/to/file%d.go\n", i)
+	}
+	input := buf.String()
+
+	for b.Loop() {
+		ParsePaths(input)
 	}
 }
 

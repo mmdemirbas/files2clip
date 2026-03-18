@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -180,7 +181,7 @@ func run() int {
 		}
 	}
 
-	var contentList []string
+	var buf bytes.Buffer
 	var totalSize int64
 	successCount := 0
 	filesLimitHit := false
@@ -230,10 +231,11 @@ func run() int {
 			continue
 		}
 
-		entry := fmt.Sprintf("%s:\n```\n%s\n```", displayPath, string(data))
+		// Calculate entry size: "path:\n```\n" + data + "\n```"
+		entrySize := int64(len(displayPath)) + 6 + int64(len(data)) + 4
 
 		// Check max_total_size limit
-		if cfg.MaxTotalSize > 0 && totalSize+int64(len(entry)) > cfg.MaxTotalSize {
+		if cfg.MaxTotalSize > 0 && totalSize+entrySize > cfg.MaxTotalSize {
 			fmt.Fprintln(os.Stderr, style.Limit(fmt.Sprintf(
 				"max_total_size=%s reached, stopping",
 				config.FormatSize(cfg.MaxTotalSize))))
@@ -241,8 +243,15 @@ func run() int {
 			break
 		}
 
-		contentList = append(contentList, entry)
-		totalSize += int64(len(entry))
+		// Write directly to buffer, avoiding intermediate string copies
+		if successCount > 0 {
+			buf.WriteString("\n\n")
+		}
+		buf.WriteString(displayPath)
+		buf.WriteString(":\n```\n")
+		buf.Write(data)
+		buf.WriteString("\n```")
+		totalSize += entrySize
 		successCount++
 
 		if *verbose {
@@ -262,8 +271,7 @@ func run() int {
 		return 1
 	}
 
-	formattedContent := strings.Join(contentList, "\n\n")
-	if err := clipboard.Set([]byte(formattedContent)); err != nil {
+	if err := clipboard.Set(buf.Bytes()); err != nil {
 		fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("clipboard: %v", err)))
 		return 1
 	}
@@ -402,7 +410,9 @@ func isIgnored(m *ignore.Matcher, path string, isDir bool) bool {
 	if m == nil {
 		return false
 	}
-	return m.Match(filepath.Base(path), isDir) || m.Match(path, isDir)
+	// Match already handles unanchored patterns by checking basename internally,
+	// so a single call with the full path is sufficient.
+	return m.Match(path, isDir)
 }
 
 func configFileHint() string {

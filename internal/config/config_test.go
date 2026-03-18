@@ -294,6 +294,12 @@ func TestConfigFilePath(t *testing.T) {
 	}
 }
 
+func BenchmarkFormatSize(b *testing.B) {
+	for b.Loop() {
+		FormatSize(10_000_000)
+	}
+}
+
 func BenchmarkParseSize(b *testing.B) {
 	for b.Loop() {
 		ParseSize("10MB")

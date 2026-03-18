@@ -219,6 +219,13 @@ func TestLoadFile(t *testing.T) {
 	})
 }
 
+func BenchmarkParse(b *testing.B) {
+	text := "*.log\nnode_modules/\nsrc/**/*.test.go\n!important.log\n*.o\n*.a\nbuild/\ndist/\n"
+	for b.Loop() {
+		Parse(text)
+	}
+}
+
 func BenchmarkMatch(b *testing.B) {
 	m := Parse("*.log\nnode_modules/\nsrc/**/*.test.go\n!important.log")
 	for b.Loop() {
