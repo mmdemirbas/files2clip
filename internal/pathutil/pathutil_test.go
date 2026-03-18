@@ -156,7 +156,7 @@ func BenchmarkReadPathsFromFile(b *testing.B) {
 	}
 
 	for b.Loop() {
-		ReadPathsFromFile(path)
+		_, _ = ReadPathsFromFile(path)
 	}
 }
 
