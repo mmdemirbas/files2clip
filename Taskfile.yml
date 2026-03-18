@@ -62,6 +62,44 @@ tasks:
     cmds:
       - go vet ./...
 
+  completions:
+    desc: Generate shell completion scripts to build/completions/
+    deps: [build]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/completions
+      - ./{{.BUILD_DIR}}/{{.BINARY_NAME}} --completion bash > {{.BUILD_DIR}}/completions/{{.BINARY_NAME}}.bash
+      - ./{{.BUILD_DIR}}/{{.BINARY_NAME}} --completion zsh  > {{.BUILD_DIR}}/completions/_{{.BINARY_NAME}}
+      - ./{{.BUILD_DIR}}/{{.BINARY_NAME}} --completion fish > {{.BUILD_DIR}}/completions/{{.BINARY_NAME}}.fish
+
+  install-completions:
+    desc: Install shell completions for the current shell
+    deps: [completions]
+    cmds:
+      - |
+        case "$SHELL" in
+          */bash)
+            dir="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}/completions"
+            mkdir -p "$dir"
+            cp {{.BUILD_DIR}}/completions/{{.BINARY_NAME}}.bash "$dir/{{.BINARY_NAME}}"
+            echo "Installed bash completion to $dir/{{.BINARY_NAME}}"
+            ;;
+          */zsh)
+            dir="${fpath[1]:-/usr/local/share/zsh/site-functions}"
+            cp {{.BUILD_DIR}}/completions/_{{.BINARY_NAME}} "$dir/_{{.BINARY_NAME}}" 2>/dev/null || \
+              sudo cp {{.BUILD_DIR}}/completions/_{{.BINARY_NAME}} "$dir/_{{.BINARY_NAME}}"
+            echo "Installed zsh completion to $dir/_{{.BINARY_NAME}}"
+            ;;
+          */fish)
+            dir="${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions"
+            mkdir -p "$dir"
+            cp {{.BUILD_DIR}}/completions/{{.BINARY_NAME}}.fish "$dir/{{.BINARY_NAME}}.fish"
+            echo "Installed fish completion to $dir/{{.BINARY_NAME}}.fish"
+            ;;
+          *)
+            echo "Unknown shell: $SHELL. Run 'files2clip --completion <shell>' manually."
+            ;;
+        esac
+
   setup:windows:
     desc: Install dependencies on Windows
     platforms: [windows]

@@ -15,6 +15,7 @@
 - Colored output with icons (✓ success, ⊘ skip, ✗ error, ⚠ limit, ✔ done)
 - Respects `NO_COLOR` and `TERM=dumb` for color-free output
 - Gitignore pattern support: `*`, `?`, `**`, `[...]`, `[!...]`, `!` negation, `#` comments
+- Shell completions for bash, zsh, and fish (`--completion <shell>`)
 - goreleaser configuration for automated releases
 - GitHub Actions CI with race detection and coverage reporting
 

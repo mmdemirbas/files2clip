@@ -52,6 +52,7 @@ The formatted content is now on your clipboard.
 | `--max-file-size <size>` | Max individual file size, e.g., `10MB` |
 | `--max-total-size <size>` | Max total content size, e.g., `50MB` |
 | `--max-files <n>` | Max number of files to process |
+| `--completion <shell>` | Generate shell completion (bash, zsh, fish) |
 
 Input modes (`<path>...`, `-f`, `--from-clipboard`) are mutually exclusive.
 
@@ -112,6 +113,24 @@ When a limit is reached, files2clip reports it explicitly:
   ⊘ large-file.bin — exceeds max file size (15.0 MB > 10.0 MB)
   ⊘ image.png — binary file
 ```
+
+## Shell Completions
+
+```sh
+# Bash
+files2clip --completion bash > /etc/bash_completion.d/files2clip
+# or for current user only:
+mkdir -p ~/.local/share/bash-completion/completions
+files2clip --completion bash > ~/.local/share/bash-completion/completions/files2clip
+
+# Zsh
+files2clip --completion zsh > /usr/local/share/zsh/site-functions/_files2clip
+
+# Fish
+files2clip --completion fish > ~/.config/fish/completions/files2clip.fish
+```
+
+Or use `task install-completions` to auto-detect your shell.
 
 ## Requirements
 

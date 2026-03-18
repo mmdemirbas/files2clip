@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mmdemirbas/files2clip/internal/clipboard"
+	"github.com/mmdemirbas/files2clip/internal/completion"
 	"github.com/mmdemirbas/files2clip/internal/config"
 	"github.com/mmdemirbas/files2clip/internal/fileutil"
 	"github.com/mmdemirbas/files2clip/internal/ignore"
@@ -45,6 +46,7 @@ func run() int {
 	inputFile := flag.String("file", "", "read paths from a file (one path per line)")
 	flag.StringVar(inputFile, "f", "", "read paths from a file (shorthand)")
 	includeBinary := flag.Bool("include-binary", false, "include binary files (skipped by default)")
+	completionShell := flag.String("completion", "", "generate shell completion (bash, zsh, fish)")
 	var excludes stringSliceFlag
 	flag.Var(&excludes, "exclude", "exclude pattern (gitignore-style, repeatable)")
 	flag.Var(&excludes, "e", "exclude pattern (shorthand)")
@@ -68,6 +70,7 @@ func run() int {
 		printFlag("--max-file-size <size>", "max individual file size (e.g., 10MB)")
 		printFlag("--max-total-size <size>", "max total content size (e.g., 50MB)")
 		printFlag("--max-files <n>", "max number of files to process")
+		printFlag("--completion <shell>", "generate shell completion (bash, zsh, fish)")
 		fmt.Fprintf(os.Stderr, "\nConfig file: %s\n", configFileHint())
 		fmt.Fprintf(os.Stderr, "  Supported keys: max_file_size, max_total_size, max_files,\n")
 		fmt.Fprintf(os.Stderr, "                  full_paths, ignore_file, include_binary\n")
@@ -77,6 +80,16 @@ func run() int {
 
 	if *showVersion {
 		fmt.Println(version)
+		return 0
+	}
+
+	if *completionShell != "" {
+		script, err := completion.Generate(*completionShell)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, style.Fail(err.Error()))
+			return 1
+		}
+		fmt.Print(script)
 		return 0
 	}
 
