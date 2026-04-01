@@ -49,30 +49,7 @@ func run() int {
 	flag.Var(&excludes, "exclude", "exclude pattern (gitignore-style, repeatable)")
 	flag.Var(&excludes, "e", "exclude pattern (shorthand)")
 
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: files2clip [flags] <path>...\n")
-		fmt.Fprintf(os.Stderr, "       files2clip -f <paths-file> [flags]\n")
-		fmt.Fprintf(os.Stderr, "       files2clip --from-clipboard [flags]\n\n")
-		fmt.Fprintf(os.Stderr, "Collects file contents and copies the formatted result to the clipboard.\n\n")
-		fmt.Fprintf(os.Stderr, "Input modes (mutually exclusive):\n")
-		printFlag("<path>...", "file/directory paths as arguments (default)")
-		printFlag("-f, --file <path>", "read paths from a file (one per line)")
-		printFlag("--from-clipboard", "read paths from the system clipboard")
-		fmt.Fprintf(os.Stderr, "\nFlags:\n")
-		printFlag("--version", "print version and exit")
-		printFlag("--verbose", "show detailed processing info")
-		printFlag("--full-paths", "use absolute paths in output")
-		printFlag("--include-binary", "include binary files (skipped by default)")
-		printFlag("-e, --exclude <pattern>", "exclude pattern (gitignore-style, repeatable)")
-		printFlag("--ignore-file <path>", "gitignore-style file for excluding paths")
-		printFlag("--max-file-size <size>", "max individual file size (e.g., 10MB)")
-		printFlag("--max-total-size <size>", "max total content size (e.g., 50MB)")
-		printFlag("--max-files <n>", "max number of files to process")
-		printFlag("--completion <shell>", "generate shell completion (bash, zsh, fish)")
-		fmt.Fprintf(os.Stderr, "\nConfig file: %s\n", configFileHint())
-		fmt.Fprintf(os.Stderr, "  Supported keys: max_file_size, max_total_size, max_files,\n")
-		fmt.Fprintf(os.Stderr, "                  full_paths, ignore_file, include_binary\n")
-	}
+	flag.Usage = printUsage
 
 	flag.Parse()
 
@@ -80,99 +57,28 @@ func run() int {
 		fmt.Println(version)
 		return 0
 	}
-
 	if *completionShell != "" {
-		script, err := completion.Generate(*completionShell)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, style.Fail(err.Error()))
-			return 1
-		}
-		fmt.Print(script)
-		return 0
+		return runCompletion(*completionShell)
 	}
 
-	// Validate mutually exclusive input modes
-	modeCount := 0
-	if flag.NArg() > 0 {
-		modeCount++
-	}
-	if *inputFile != "" {
-		modeCount++
-	}
-	if *fromClipboard {
-		modeCount++
-	}
-	if modeCount == 0 {
+	n := inputModeCount(flag.NArg() > 0, *inputFile != "", *fromClipboard)
+	if n == 0 {
 		flag.Usage()
 		return 1
 	}
-	if modeCount > 1 {
+	if n > 1 {
 		fmt.Fprintln(os.Stderr, style.Fail("specify only one input mode: paths as arguments, --file, or --from-clipboard"))
 		return 1
 	}
 
-	// Load config: defaults → config file → CLI flags
-	cfg := config.DefaultConfig()
-	if cfgPath, err := config.ConfigFilePath(); err == nil {
-		if fileCfg, err := config.LoadFromFile(cfgPath); err == nil {
-			cfg = fileCfg
-		} else if !os.IsNotExist(err) {
-			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("config file error: %v", err)))
-		}
-	}
-	applyCLIOverrides(&cfg, *maxFileSizeStr, *maxTotalSizeStr, *maxFilesFlag, *fullPaths, *ignoreFile, *includeBinary)
+	cfg := loadEffectiveConfig(*maxFileSizeStr, *maxTotalSizeStr, *maxFilesFlag, *fullPaths, *ignoreFile, *includeBinary)
+	logVerboseConfig(cfg, *verbose)
 
-	if *verbose {
-		fmt.Fprintln(os.Stderr, style.Info(fmt.Sprintf(
-			"config: max_file_size=%s, max_total_size=%s, max_files=%d, full_paths=%v",
-			config.FormatSize(cfg.MaxFileSize), config.FormatSize(cfg.MaxTotalSize),
-			cfg.MaxFiles, cfg.FullPaths)))
+	paths, inputLabel, ignoreMatcher, err := setupExecution(*fromClipboard, *inputFile, flag.Args(), cfg.IgnoreFile, excludes)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, style.Fail(err.Error()))
+		return 1
 	}
-
-	// Load ignore patterns (from file + inline --exclude flags)
-	var ignoreMatcher *ignore.Matcher
-	if cfg.IgnoreFile != "" {
-		var err error
-		ignoreMatcher, err = ignore.LoadFile(cfg.IgnoreFile)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("ignore file: %v", err)))
-			return 1
-		}
-	}
-	if len(excludes) > 0 {
-		cliMatcher := ignore.Parse(strings.Join(excludes, "\n"))
-		if ignoreMatcher != nil {
-			ignoreMatcher = ignore.Merge(ignoreMatcher, cliMatcher)
-		} else {
-			ignoreMatcher = cliMatcher
-		}
-	}
-
-	// Read paths from args, file, or clipboard
-	var paths []string
-	var inputLabel string
-	switch {
-	case *fromClipboard:
-		data, err := clipboard.Get()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("read clipboard: %v", err)))
-			return 1
-		}
-		paths = pathutil.ParsePaths(string(data))
-		inputLabel = "(clipboard)"
-	case *inputFile != "":
-		var err error
-		paths, err = pathutil.ReadPathsFromFile(*inputFile)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s: %v", *inputFile, err)))
-			return 1
-		}
-		inputLabel = *inputFile
-	default:
-		paths = flag.Args()
-		inputLabel = "(args)"
-	}
-
 	if len(paths) == 0 {
 		fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s doesn't contain any paths.", inputLabel)))
 		return 1
@@ -183,128 +89,178 @@ func run() int {
 	}
 
 	absolutePaths := collectFiles(paths, *verbose, ignoreMatcher)
+	ancestor := computeAncestor(absolutePaths, cfg.FullPaths)
+	res := buildOutput(absolutePaths, cfg, ancestor, *verbose)
 
-	ancestor := ""
-	if !cfg.FullPaths {
-		ancestor = pathutil.CommonDir(absolutePaths)
-		if ancestor == "/" {
-			ancestor = ""
-		}
+	if code, done := checkResults(absolutePaths, res.successCount); done {
+		return code
 	}
 
-	var buf bytes.Buffer
-	var totalSize int64
-	successCount := 0
-	filesLimitHit := false
-	sizeLimitHit := false
-
-	for _, ap := range absolutePaths {
-		// Check max_files limit
-		if cfg.MaxFiles > 0 && successCount >= cfg.MaxFiles {
-			fmt.Fprintln(os.Stderr, style.Limit(fmt.Sprintf("max_files=%d reached, stopping", cfg.MaxFiles)))
-			filesLimitHit = true
-			break
-		}
-
-		displayPath := ap
-		if ancestor != "" {
-			if r, err := filepath.Rel(ancestor, ap); err == nil {
-				displayPath = r
-			}
-		}
-
-		// Check file size before reading
-		fi, err := os.Stat(ap)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", displayPath, err)))
-			continue
-		}
-
-		if cfg.MaxFileSize > 0 && fi.Size() > cfg.MaxFileSize {
-			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf(
-				"%s — exceeds max file size (%s > %s)",
-				displayPath, config.FormatSize(fi.Size()), config.FormatSize(cfg.MaxFileSize))))
-			continue
-		}
-
-		data, err := os.ReadFile(ap) //nolint:gosec // G304: reading user-specified file paths is the tool's purpose
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — file not found", displayPath)))
-			} else {
-				fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", displayPath, err)))
-			}
-			continue
-		}
-
-		if !cfg.IncludeBinary && fileutil.IsBinary(data) {
-			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — binary file", displayPath)))
-			continue
-		}
-
-		// Calculate entry size: "path:\n```\n" + data + "\n```"
-		entrySize := int64(len(displayPath)) + 6 + int64(len(data)) + 4
-
-		// Check max_total_size limit
-		if cfg.MaxTotalSize > 0 && totalSize+entrySize > cfg.MaxTotalSize {
-			fmt.Fprintln(os.Stderr, style.Limit(fmt.Sprintf(
-				"max_total_size=%s reached, stopping",
-				config.FormatSize(cfg.MaxTotalSize))))
-			sizeLimitHit = true
-			break
-		}
-
-		// Write directly to buffer, avoiding intermediate string copies
-		if successCount > 0 {
-			buf.WriteString("\n\n")
-		}
-		buf.WriteString(displayPath)
-		buf.WriteString(":\n```\n")
-		buf.Write(data)
-		buf.WriteString("\n```")
-		totalSize += entrySize
-		successCount++
-
-		if *verbose {
-			fmt.Println(style.OK(fmt.Sprintf("%s (%s)", displayPath, config.FormatSize(fi.Size()))))
-		} else {
-			fmt.Println(style.OK(displayPath))
-		}
-	}
-
-	total := len(absolutePaths)
-	if total == 0 {
-		fmt.Fprintln(os.Stderr, style.Skip("No files found."))
-		return 0
-	}
-	if successCount == 0 {
-		fmt.Fprintln(os.Stderr, style.Fail("No files copied."))
-		return 1
-	}
-
-	if err := clipboard.Set(buf.Bytes()); err != nil {
+	if err := clipboard.Set(res.buf.Bytes()); err != nil {
 		fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("clipboard: %v", err)))
 		return 1
 	}
 
 	beep()
+	fmt.Printf("\n%s\n", style.Done(buildSummary(res.successCount, len(absolutePaths), ancestor, res.totalSize, *verbose, res.filesLimitHit, res.sizeLimitHit)))
+	return 0
+}
 
-	summary := fmt.Sprintf("%d/%d files copied", successCount, total)
-	if ancestor != "" {
-		summary += fmt.Sprintf(", relative to %s", ancestor)
+func inputModeCount(hasArgs, hasFile, hasClipboard bool) int {
+	n := 0
+	if hasArgs {
+		n++
 	}
-	if *verbose {
-		summary += fmt.Sprintf(" (total %s)", config.FormatSize(totalSize))
+	if hasFile {
+		n++
+	}
+	if hasClipboard {
+		n++
+	}
+	return n
+}
+
+func logVerboseConfig(cfg config.Config, verbose bool) {
+	if verbose {
+		fmt.Fprintln(os.Stderr, style.Info(fmt.Sprintf(
+			"config: max_file_size=%s, max_total_size=%s, max_files=%d, full_paths=%v",
+			config.FormatSize(cfg.MaxFileSize), config.FormatSize(cfg.MaxTotalSize),
+			cfg.MaxFiles, cfg.FullPaths)))
+	}
+}
+
+func setupExecution(fromClipboard bool, inputFile string, args []string, ignoreFile string, excludes stringSliceFlag) ([]string, string, *ignore.Matcher, error) {
+	m, err := loadIgnoreMatcher(ignoreFile, excludes)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("ignore file: %w", err)
+	}
+	paths, label, err := readInputPaths(fromClipboard, inputFile, args)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return paths, label, m, nil
+}
+
+func checkResults(absolutePaths []string, successCount int) (code int, done bool) {
+	if len(absolutePaths) == 0 {
+		fmt.Fprintln(os.Stderr, style.Skip("No files found."))
+		return 0, true
+	}
+	if successCount == 0 {
+		fmt.Fprintln(os.Stderr, style.Fail("No files copied."))
+		return 1, true
+	}
+	return 0, false
+}
+
+func runCompletion(shell string) int {
+	script, err := completion.Generate(shell)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, style.Fail(err.Error()))
+		return 1
+	}
+	fmt.Print(script)
+	return 0
+}
+
+func computeAncestor(absolutePaths []string, fullPaths bool) string {
+	if fullPaths {
+		return ""
+	}
+	if a := pathutil.CommonDir(absolutePaths); a != "/" {
+		return a
+	}
+	return ""
+}
+
+func buildSummary(successCount, total int, ancestor string, totalSize int64, verbose, filesLimitHit, sizeLimitHit bool) string {
+	s := fmt.Sprintf("%d/%d files copied", successCount, total)
+	if ancestor != "" {
+		s += fmt.Sprintf(", relative to %s", ancestor)
+	}
+	if verbose {
+		s += fmt.Sprintf(" (total %s)", config.FormatSize(totalSize))
 	}
 	if filesLimitHit || sizeLimitHit {
-		summary += " [limited]"
+		s += " [limited]"
 	}
-	fmt.Printf("\n%s\n", style.Done(summary))
-	return 0
+	return s
+}
+
+func printUsage() {
+	fmt.Fprintf(os.Stderr, "Usage: files2clip [flags] <path>...\n")
+	fmt.Fprintf(os.Stderr, "       files2clip -f <paths-file> [flags]\n")
+	fmt.Fprintf(os.Stderr, "       files2clip --from-clipboard [flags]\n\n")
+	fmt.Fprintf(os.Stderr, "Collects file contents and copies the formatted result to the clipboard.\n\n")
+	fmt.Fprintf(os.Stderr, "Input modes (mutually exclusive):\n")
+	printFlag("<path>...", "file/directory paths as arguments (default)")
+	printFlag("-f, --file <path>", "read paths from a file (one per line)")
+	printFlag("--from-clipboard", "read paths from the system clipboard")
+	fmt.Fprintf(os.Stderr, "\nFlags:\n")
+	printFlag("--version", "print version and exit")
+	printFlag("--verbose", "show detailed processing info")
+	printFlag("--full-paths", "use absolute paths in output")
+	printFlag("--include-binary", "include binary files (skipped by default)")
+	printFlag("-e, --exclude <pattern>", "exclude pattern (gitignore-style, repeatable)")
+	printFlag("--ignore-file <path>", "gitignore-style file for excluding paths")
+	printFlag("--max-file-size <size>", "max individual file size (e.g., 10MB)")
+	printFlag("--max-total-size <size>", "max total content size (e.g., 50MB)")
+	printFlag("--max-files <n>", "max number of files to process")
+	printFlag("--completion <shell>", "generate shell completion (bash, zsh, fish)")
+	fmt.Fprintf(os.Stderr, "\nConfig file: %s\n", configFileHint())
+	fmt.Fprintf(os.Stderr, "  Supported keys: max_file_size, max_total_size, max_files,\n")
+	fmt.Fprintf(os.Stderr, "                  full_paths, ignore_file, include_binary\n")
 }
 
 func printFlag(name, desc string) {
 	fmt.Fprintf(os.Stderr, "  %-26s %s\n", name, desc)
+}
+
+func loadEffectiveConfig(maxFileSizeStr, maxTotalSizeStr string, maxFilesFlag int, fullPaths bool, ignoreFile string, includeBinary bool) config.Config {
+	cfg := config.DefaultConfig()
+	if cfgPath, err := config.ConfigFilePath(); err == nil {
+		if fileCfg, err := config.LoadFromFile(cfgPath); err == nil {
+			cfg = fileCfg
+		} else if !os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("config file error: %v", err)))
+		}
+	}
+	applyCLIOverrides(&cfg, maxFileSizeStr, maxTotalSizeStr, maxFilesFlag, fullPaths, ignoreFile, includeBinary)
+	return cfg
+}
+
+func loadIgnoreMatcher(ignoreFile string, excludes stringSliceFlag) (*ignore.Matcher, error) {
+	var m *ignore.Matcher
+	if ignoreFile != "" {
+		var err error
+		m, err = ignore.LoadFile(ignoreFile)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(excludes) > 0 {
+		cli := ignore.Parse(strings.Join(excludes, "\n"))
+		m = ignore.Merge(m, cli)
+	}
+	return m, nil
+}
+
+func readInputPaths(fromClipboard bool, inputFile string, args []string) ([]string, string, error) {
+	if fromClipboard {
+		data, err := clipboard.Get()
+		if err != nil {
+			return nil, "", fmt.Errorf("read clipboard: %w", err)
+		}
+		return pathutil.ParsePaths(string(data)), "(clipboard)", nil
+	}
+	if inputFile != "" {
+		paths, err := pathutil.ReadPathsFromFile(inputFile)
+		if err != nil {
+			return nil, "", fmt.Errorf("%s: %w", inputFile, err)
+		}
+		return paths, inputFile, nil
+	}
+	return args, "(args)", nil
 }
 
 func applyCLIOverrides(cfg *config.Config, maxFileSize, maxTotalSize string, maxFiles int, fullPaths bool, ignoreFile string, includeBinary bool) {
@@ -336,85 +292,194 @@ func applyCLIOverrides(cfg *config.Config, maxFileSize, maxTotalSize string, max
 	}
 }
 
+// outputResult holds the accumulated result of processing a list of files.
+type outputResult struct {
+	buf           bytes.Buffer
+	successCount  int
+	totalSize     int64
+	filesLimitHit bool
+	sizeLimitHit  bool
+}
+
+func buildOutput(absolutePaths []string, cfg config.Config, ancestor string, verbose bool) outputResult {
+	var res outputResult
+	for _, ap := range absolutePaths {
+		if cfg.MaxFiles > 0 && res.successCount >= cfg.MaxFiles {
+			fmt.Fprintln(os.Stderr, style.Limit(fmt.Sprintf("max_files=%d reached, stopping", cfg.MaxFiles)))
+			res.filesLimitHit = true
+			break
+		}
+		if processOneFile(ap, ancestor, cfg, verbose, &res) {
+			break
+		}
+	}
+	return res
+}
+
+func processOneFile(ap, ancestor string, cfg config.Config, verbose bool, res *outputResult) (limitHit bool) {
+	displayPath := displayName(ap, ancestor)
+
+	fi, err := os.Stat(ap)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", displayPath, err)))
+		return false
+	}
+	if sizeExceedsLimit(cfg, fi, displayPath) {
+		return false
+	}
+
+	data, err := os.ReadFile(ap) //nolint:gosec // G304: reading user-specified file paths is the tool's purpose
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — file not found", displayPath)))
+		} else {
+			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", displayPath, err)))
+		}
+		return false
+	}
+
+	if isBinaryFile(cfg, data, displayPath) {
+		return false
+	}
+
+	// Calculate entry size: "path:\n```\n" + data + "\n```"
+	entrySize := int64(len(displayPath)) + 6 + int64(len(data)) + 4
+	if cfg.MaxTotalSize > 0 && res.totalSize+entrySize > cfg.MaxTotalSize {
+		fmt.Fprintln(os.Stderr, style.Limit(fmt.Sprintf(
+			"max_total_size=%s reached, stopping", config.FormatSize(cfg.MaxTotalSize))))
+		res.sizeLimitHit = true
+		return true
+	}
+
+	if res.successCount > 0 {
+		res.buf.WriteString("\n\n")
+	}
+	res.buf.WriteString(displayPath)
+	res.buf.WriteString(":\n```\n")
+	res.buf.Write(data)
+	res.buf.WriteString("\n```")
+	res.totalSize += entrySize
+	res.successCount++
+
+	if verbose {
+		fmt.Println(style.OK(fmt.Sprintf("%s (%s)", displayPath, config.FormatSize(fi.Size()))))
+	} else {
+		fmt.Println(style.OK(displayPath))
+	}
+	return false
+}
+
+func sizeExceedsLimit(cfg config.Config, fi os.FileInfo, displayPath string) bool {
+	if cfg.MaxFileSize > 0 && fi.Size() > cfg.MaxFileSize {
+		fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf(
+			"%s — exceeds max file size (%s > %s)",
+			displayPath, config.FormatSize(fi.Size()), config.FormatSize(cfg.MaxFileSize))))
+		return true
+	}
+	return false
+}
+
+func isBinaryFile(cfg config.Config, data []byte, displayPath string) bool {
+	if !cfg.IncludeBinary && fileutil.IsBinary(data) {
+		fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — binary file", displayPath)))
+		return true
+	}
+	return false
+}
+
+func displayName(ap, ancestor string) string {
+	if ancestor != "" {
+		if r, err := filepath.Rel(ancestor, ap); err == nil {
+			return r
+		}
+	}
+	return ap
+}
+
 func collectFiles(paths []string, verbose bool, ignoreMatcher *ignore.Matcher) []string {
 	visited := make(map[string]bool)
 	var absolutePaths []string
-
 	for _, p := range paths {
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("resolve path %s: %v", p, err)))
-			continue
-		}
-
-		fi, err := os.Lstat(abs)
-		if err != nil {
-			if os.IsNotExist(err) {
-				fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — not found", abs)))
-			} else {
-				fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", abs, err)))
-			}
-			continue
-		}
-
-		// Resolve symlinks for loop detection
-		resolved, err := filepath.EvalSymlinks(abs)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — cannot resolve symlink: %v", abs, err)))
-			continue
-		}
-
-		if visited[resolved] {
-			if verbose {
-				fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — already visited", abs)))
-			}
-			continue
-		}
-
-		if !fi.IsDir() {
-			if !pathutil.IsExcluded(abs) && !isIgnored(ignoreMatcher, abs, false) {
-				visited[resolved] = true
-				absolutePaths = append(absolutePaths, abs)
-			}
-			continue
-		}
-
-		_ = filepath.WalkDir(abs, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", path, err)))
-				return nil
-			}
-
-			if d.IsDir() {
-				if isIgnored(ignoreMatcher, path, true) {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			if pathutil.IsExcluded(path) || isIgnored(ignoreMatcher, path, false) {
-				return nil
-			}
-
-			resolvedPath, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — cannot resolve symlink: %v", path, err)))
-				return nil
-			}
-
-			if visited[resolvedPath] {
-				if verbose {
-					fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — already visited (symlink)", path)))
-				}
-				return nil
-			}
-
-			visited[resolvedPath] = true
-			absolutePaths = append(absolutePaths, path)
-			return nil
-		})
+		addPath(p, visited, &absolutePaths, ignoreMatcher, verbose)
 	}
 	return absolutePaths
+}
+
+func addPath(p string, visited map[string]bool, result *[]string, m *ignore.Matcher, verbose bool) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("resolve path %s: %v", p, err)))
+		return
+	}
+
+	fi, err := os.Lstat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — not found", abs)))
+		} else {
+			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", abs, err)))
+		}
+		return
+	}
+
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — cannot resolve symlink: %v", abs, err)))
+		return
+	}
+
+	if visited[resolved] {
+		if verbose {
+			fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — already visited", abs)))
+		}
+		return
+	}
+
+	if !fi.IsDir() {
+		if !pathutil.IsExcluded(abs) && !isIgnored(m, abs, false) {
+			visited[resolved] = true
+			*result = append(*result, abs)
+		}
+		return
+	}
+
+	_ = filepath.WalkDir(abs, walkFunc(visited, result, m, verbose))
+}
+
+func dirEntry(m *ignore.Matcher, path string) error {
+	if isIgnored(m, path, true) {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+func walkFunc(visited map[string]bool, result *[]string, m *ignore.Matcher, verbose bool) func(string, os.DirEntry, error) error {
+	return func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — %v", path, err)))
+			return nil
+		}
+		if d.IsDir() {
+			return dirEntry(m, path)
+		}
+		if pathutil.IsExcluded(path) || isIgnored(m, path, false) {
+			return nil
+		}
+		resolvedPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, style.Fail(fmt.Sprintf("%s — cannot resolve symlink: %v", path, err)))
+			return nil
+		}
+		if visited[resolvedPath] {
+			if verbose {
+				fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — already visited (symlink)", path)))
+			}
+			return nil
+		}
+		visited[resolvedPath] = true
+		*result = append(*result, path)
+		return nil
+	}
 }
 
 func isIgnored(m *ignore.Matcher, path string, isDir bool) bool {
