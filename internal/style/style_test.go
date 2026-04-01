@@ -26,34 +26,43 @@ func TestFormatFunctions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name+"/no_color", func(t *testing.T) {
 			colorEnabled = false
-			result := tt.fn("test message")
-			if !strings.Contains(result, tt.icon) {
-				t.Errorf("expected icon %q in %q", tt.icon, result)
-			}
-			if !strings.Contains(result, "test message") {
-				t.Errorf("expected message in %q", result)
-			}
-			if strings.Contains(result, "\033[") {
-				t.Errorf("no ANSI codes expected when color disabled: %q", result)
-			}
+			checkFormatNoColor(t, tt.fn, tt.icon)
 		})
-
 		t.Run(tt.name+"/color", func(t *testing.T) {
 			colorEnabled = true
-			result := tt.fn("test message")
-			if !strings.Contains(result, tt.icon) {
-				t.Errorf("expected icon %q in %q", tt.icon, result)
-			}
-			if !strings.Contains(result, "test message") {
-				t.Errorf("expected message in %q", result)
-			}
-			if !strings.Contains(result, "\033[") {
-				t.Errorf("expected ANSI codes when color enabled: %q", result)
-			}
-			if !strings.HasSuffix(result, reset) {
-				t.Errorf("expected reset suffix: %q", result)
-			}
+			checkFormatColor(t, tt.fn, tt.icon)
 		})
+	}
+}
+
+func checkFormatNoColor(t *testing.T, fn func(string) string, icon string) {
+	t.Helper()
+	result := fn("test message")
+	if !strings.Contains(result, icon) {
+		t.Errorf("expected icon %q in %q", icon, result)
+	}
+	if !strings.Contains(result, "test message") {
+		t.Errorf("expected message in %q", result)
+	}
+	if strings.Contains(result, "\033[") {
+		t.Errorf("no ANSI codes expected when color disabled: %q", result)
+	}
+}
+
+func checkFormatColor(t *testing.T, fn func(string) string, icon string) {
+	t.Helper()
+	result := fn("test message")
+	if !strings.Contains(result, icon) {
+		t.Errorf("expected icon %q in %q", icon, result)
+	}
+	if !strings.Contains(result, "test message") {
+		t.Errorf("expected message in %q", result)
+	}
+	if !strings.Contains(result, "\033[") {
+		t.Errorf("expected ANSI codes when color enabled: %q", result)
+	}
+	if !strings.HasSuffix(result, reset) {
+		t.Errorf("expected reset suffix: %q", result)
 	}
 }
 
