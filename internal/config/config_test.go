@@ -92,191 +92,77 @@ func TestFormatSize(t *testing.T) {
 }
 
 func TestLoadFromFile(t *testing.T) {
-	t.Run("full config", func(t *testing.T) {
-		content := "# files2clip config\nmax_file_size = 5MB\nmax_total_size = 20MB\nmax_files = 500\n"
-		path := writeTempConfig(t, content)
+	d := DefaultConfig()
+	trueFullPaths := Config{MaxFileSize: d.MaxFileSize, MaxTotalSize: d.MaxTotalSize, MaxFiles: d.MaxFiles, FullPaths: true}
 
-		cfg, err := LoadFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.MaxFileSize != 5_000_000 {
-			t.Errorf("MaxFileSize = %d, want 5000000", cfg.MaxFileSize)
-		}
-		if cfg.MaxTotalSize != 20_000_000 {
-			t.Errorf("MaxTotalSize = %d, want 20000000", cfg.MaxTotalSize)
-		}
-		if cfg.MaxFiles != 500 {
-			t.Errorf("MaxFiles = %d, want 500", cfg.MaxFiles)
-		}
-		// Unset fields should keep their defaults
-		if cfg.FullPaths {
-			t.Error("FullPaths should remain default false")
-		}
-		if cfg.IgnoreFile != "" {
-			t.Errorf("IgnoreFile should remain default empty, got %q", cfg.IgnoreFile)
-		}
-	})
-
-	t.Run("partial config uses defaults", func(t *testing.T) {
-		content := "max_files = 42\n"
-		path := writeTempConfig(t, content)
-
-		cfg, err := LoadFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.MaxFiles != 42 {
-			t.Errorf("MaxFiles = %d, want 42", cfg.MaxFiles)
-		}
-		if cfg.MaxFileSize != 10_000_000 {
-			t.Errorf("MaxFileSize should be default 10000000, got %d", cfg.MaxFileSize)
-		}
-	})
-
-	t.Run("full_paths and ignore_file", func(t *testing.T) {
-		content := "full_paths = true\nignore_file = ~/.config/files2clip/ignore\n"
-		path := writeTempConfig(t, content)
-
-		cfg, err := LoadFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !cfg.FullPaths {
-			t.Error("FullPaths should be true")
-		}
-		if cfg.IgnoreFile != "~/.config/files2clip/ignore" {
-			t.Errorf("IgnoreFile = %q, want %q", cfg.IgnoreFile, "~/.config/files2clip/ignore")
-		}
-	})
-
-	t.Run("include_binary", func(t *testing.T) {
-		content := "include_binary = true\n"
-		path := writeTempConfig(t, content)
-
-		cfg, err := LoadFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !cfg.IncludeBinary {
-			t.Error("IncludeBinary should be true")
-		}
-	})
-
-	t.Run("full_paths variants", func(t *testing.T) {
-		for _, tc := range []struct {
-			value string
-			want  bool
-		}{
-			{"true", true},
-			{"yes", true},
-			{"1", true},
-			{"TRUE", true},
-			{"Yes", true},
-			{"false", false},
-			{"no", false},
-			{"0", false},
-			{"anything", false},
-		} {
-			t.Run("full_paths="+tc.value, func(t *testing.T) {
-				content := "full_paths = " + tc.value + "\n"
-				path := writeTempConfig(t, content)
-
-				cfg, err := LoadFromFile(path)
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if cfg.FullPaths != tc.want {
-					t.Errorf("got %v, want %v", cfg.FullPaths, tc.want)
-				}
-			})
-		}
-	})
-
-	t.Run("empty file uses defaults", func(t *testing.T) {
-		path := writeTempConfig(t, "")
-
-		cfg, err := LoadFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg != DefaultConfig() {
-			t.Errorf("empty config should equal defaults: got %+v, want %+v", cfg, DefaultConfig())
-		}
-	})
-
-	t.Run("comments only", func(t *testing.T) {
-		content := "# comment\n# another comment\n"
-		path := writeTempConfig(t, content)
-
-		cfg, err := LoadFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg != DefaultConfig() {
-			t.Error("comments-only config should equal defaults")
-		}
-	})
-
-	t.Run("invalid syntax", func(t *testing.T) {
-		path := writeTempConfig(t, "no_equals_sign\n")
-		if _, err := LoadFromFile(path); err == nil {
-			t.Fatal("expected error for invalid syntax")
-		}
-	})
-
-	t.Run("invalid max_file_size", func(t *testing.T) {
-		path := writeTempConfig(t, "max_file_size = notanumber\n")
-		if _, err := LoadFromFile(path); err == nil {
-			t.Fatal("expected error for invalid max_file_size")
-		}
-	})
-
-	t.Run("invalid max_total_size", func(t *testing.T) {
-		path := writeTempConfig(t, "max_total_size = notanumber\n")
-		if _, err := LoadFromFile(path); err == nil {
-			t.Fatal("expected error for invalid max_total_size")
-		}
-	})
-
-	t.Run("invalid max_files", func(t *testing.T) {
-		path := writeTempConfig(t, "max_files = notanumber\n")
-		if _, err := LoadFromFile(path); err == nil {
-			t.Fatal("expected error for invalid max_files")
-		}
-	})
-
-	t.Run("unknown key does not error", func(t *testing.T) {
-		path := writeTempConfig(t, "unknown_key = value\n")
-
-		cfg, err := LoadFromFile(path)
-		if err != nil {
-			t.Fatalf("unknown key should not cause error: %v", err)
-		}
-		if cfg != DefaultConfig() {
-			t.Errorf("unknown key should not change defaults: got %+v", cfg)
-		}
-	})
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    Config
+		wantErr bool
+	}{
+		{
+			name:    "full config",
+			content: "# files2clip config\nmax_file_size = 5MB\nmax_total_size = 20MB\nmax_files = 500\n",
+			want:    Config{MaxFileSize: 5_000_000, MaxTotalSize: 20_000_000, MaxFiles: 500},
+		},
+		{
+			name:    "partial config uses defaults",
+			content: "max_files = 42\n",
+			want:    Config{MaxFileSize: d.MaxFileSize, MaxTotalSize: d.MaxTotalSize, MaxFiles: 42},
+		},
+		{
+			name:    "full_paths and ignore_file",
+			content: "full_paths = true\nignore_file = ~/.config/files2clip/ignore\n",
+			want:    Config{MaxFileSize: d.MaxFileSize, MaxTotalSize: d.MaxTotalSize, MaxFiles: d.MaxFiles, FullPaths: true, IgnoreFile: "~/.config/files2clip/ignore"},
+		},
+		{
+			name:    "include_binary",
+			content: "include_binary = true\n",
+			want:    Config{MaxFileSize: d.MaxFileSize, MaxTotalSize: d.MaxTotalSize, MaxFiles: d.MaxFiles, IncludeBinary: true},
+		},
+		{name: "empty file uses defaults", content: "", want: d},
+		{name: "comments only", content: "# comment\n# another comment\n", want: d},
+		{name: "unknown key does not error", content: "unknown_key = value\n", want: d},
+		{
+			name:    "windows line endings",
+			content: "max_files = 99\r\nmax_file_size = 1MB\r\n",
+			want:    Config{MaxFileSize: 1_000_000, MaxTotalSize: d.MaxTotalSize, MaxFiles: 99},
+		},
+		// full_paths bool parsing variants
+		{name: "full_paths=true", content: "full_paths = true\n", want: trueFullPaths},
+		{name: "full_paths=yes", content: "full_paths = yes\n", want: trueFullPaths},
+		{name: "full_paths=1", content: "full_paths = 1\n", want: trueFullPaths},
+		{name: "full_paths=TRUE", content: "full_paths = TRUE\n", want: trueFullPaths},
+		{name: "full_paths=Yes", content: "full_paths = Yes\n", want: trueFullPaths},
+		{name: "full_paths=false", content: "full_paths = false\n", want: d},
+		{name: "full_paths=no", content: "full_paths = no\n", want: d},
+		{name: "full_paths=0", content: "full_paths = 0\n", want: d},
+		{name: "full_paths=anything", content: "full_paths = anything\n", want: d},
+		// error cases
+		{name: "invalid syntax", content: "no_equals_sign\n", wantErr: true},
+		{name: "invalid max_file_size", content: "max_file_size = notanumber\n", wantErr: true},
+		{name: "invalid max_total_size", content: "max_total_size = notanumber\n", wantErr: true},
+		{name: "invalid max_files", content: "max_files = notanumber\n", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempConfig(t, tc.content)
+			got, err := LoadFromFile(path)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("error = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if got != tc.want {
+				t.Errorf("\ngot  %+v\nwant %+v", got, tc.want)
+			}
+		})
+	}
 
 	t.Run("nonexistent file", func(t *testing.T) {
 		if _, err := LoadFromFile("/nonexistent/config"); err == nil {
 			t.Fatal("expected error for nonexistent file")
-		}
-	})
-
-	t.Run("windows line endings", func(t *testing.T) {
-		content := "max_files = 99\r\nmax_file_size = 1MB\r\n"
-		path := writeTempConfig(t, content)
-
-		cfg, err := LoadFromFile(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if cfg.MaxFiles != 99 {
-			t.Errorf("MaxFiles = %d, want 99", cfg.MaxFiles)
-		}
-		if cfg.MaxFileSize != 1_000_000 {
-			t.Errorf("MaxFileSize = %d, want 1000000", cfg.MaxFileSize)
 		}
 	})
 }
