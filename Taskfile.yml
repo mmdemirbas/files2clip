@@ -62,6 +62,13 @@ tasks:
     cmds:
       - go vet ./...
 
+  quality:
+    desc: Quality gate — tests with race+coverage, then lint
+    cmds:
+      - go test -race -coverprofile=cover.out ./...
+      - go tool cover -func=cover.out | tail -1
+      - golangci-lint run --output.tab.path stdout ./...
+
   completions:
     desc: Generate shell completion scripts to build/completions/
     deps: [build]
