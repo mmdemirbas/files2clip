@@ -6,14 +6,29 @@ import (
 	"testing"
 )
 
+type matchCase struct {
+	name    string
+	pattern string
+	path    string
+	isDir   bool
+	want    bool
+}
+
+func runMatchTests(t *testing.T, cases []matchCase) {
+	t.Helper()
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Parse(tt.pattern).Match(tt.path, tt.isDir)
+			if got != tt.want {
+				t.Errorf("Match(%q, isDir=%v) with pattern %q = %v, want %v",
+					tt.path, tt.isDir, tt.pattern, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMatch(t *testing.T) {
-	tests := []struct {
-		name    string
-		pattern string
-		path    string
-		isDir   bool
-		want    bool
-	}{
+	runMatchTests(t, []matchCase{
 		// ── Simple filename patterns ──
 		{"match extension", "*.log", "debug.log", false, true},
 		{"match extension nested", "*.log", "src/debug.log", false, true},
@@ -42,8 +57,11 @@ func TestMatch(t *testing.T) {
 		{"leading slash dir on dir", "/build/", "build", true, true},
 		{"leading slash dir on file", "/build/", "build", false, false},
 		{"leading slash dir nested", "/build/", "src/build", true, false},
+	})
+}
 
-		// ── ** (double star) patterns ──
+func TestMatchDoublestar(t *testing.T) {
+	runMatchTests(t, []matchCase{
 		// bare **
 		{"bare doublestar", "**", "anything/at/all", false, true},
 		{"bare doublestar file", "**", "file.txt", false, true},
@@ -66,11 +84,14 @@ func TestMatch(t *testing.T) {
 		// multiple **
 		{"multi doublestar", "a/**/b/**/c", "a/x/b/y/c", false, true},
 		{"multi doublestar zero", "a/**/b/**/c", "a/b/c", false, true},
-
 		// ** not adjacent to / (treated as two regular *)
 		{"star star no sep", "a**.go", "abc.go", false, true},
 		{"star star no sep no cross dir", "a**.go", "a/b.go", false, false},
+	})
+}
 
+func TestMatchSpecialSyntax(t *testing.T) {
+	runMatchTests(t, []matchCase{
 		// ── Negation (!) ──
 		{"negation excludes", "*.log\n!important.log", "debug.log", false, true},
 		{"negation re-includes", "*.log\n!important.log", "important.log", false, false},
@@ -113,26 +134,12 @@ func TestMatch(t *testing.T) {
 		{"no match at all", "*.xyz", "file.abc", false, false},
 		{"pattern longer than path", "a/b/c/d", "a/b", false, false},
 		{"malformed bracket", "[unclosed", "u", false, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := Parse(tt.pattern)
-			got := m.Match(tt.path, tt.isDir)
-			if got != tt.want {
-				t.Errorf("Match(%q, isDir=%v) with pattern %q = %v, want %v",
-					tt.path, tt.isDir, tt.pattern, got, tt.want)
-			}
-		})
-	}
+	})
 }
 
 func TestMerge(t *testing.T) {
 	t.Run("combine two matchers", func(t *testing.T) {
-		a := Parse("*.log")
-		b := Parse("*.txt")
-		merged := Merge(a, b)
-
+		merged := Merge(Parse("*.log"), Parse("*.txt"))
 		if !merged.Match("foo.log", false) {
 			t.Error("merged should match *.log")
 		}
@@ -144,34 +151,26 @@ func TestMerge(t *testing.T) {
 		}
 	})
 
-	t.Run("nil first", func(t *testing.T) {
-		b := Parse("*.log")
-		merged := Merge(nil, b)
-		if !merged.Match("foo.log", false) {
-			t.Error("Merge(nil, b) should match b's patterns")
-		}
-	})
-
-	t.Run("nil second", func(t *testing.T) {
-		a := Parse("*.log")
-		merged := Merge(a, nil)
-		if !merged.Match("foo.log", false) {
-			t.Error("Merge(a, nil) should match a's patterns")
-		}
-	})
-
-	t.Run("both nil", func(t *testing.T) {
-		merged := Merge(nil, nil)
-		if merged.Match("foo.log", false) {
-			t.Error("Merge(nil, nil) should not match anything")
-		}
-	})
+	logMatcher := Parse("*.log")
+	for _, tc := range []struct {
+		name string
+		a, b *Matcher
+		path string
+		want bool
+	}{
+		{"nil first", nil, logMatcher, "foo.log", true},
+		{"nil second", logMatcher, nil, "foo.log", true},
+		{"both nil", nil, nil, "foo.log", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Merge(tc.a, tc.b).Match(tc.path, false); got != tc.want {
+				t.Errorf("Merge(...).Match(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
 
 	t.Run("negation across merge", func(t *testing.T) {
-		a := Parse("*.log")
-		b := Parse("!important.log")
-		merged := Merge(a, b)
-
+		merged := Merge(Parse("*.log"), Parse("!important.log"))
 		if !merged.Match("debug.log", false) {
 			t.Error("debug.log should still be excluded")
 		}
