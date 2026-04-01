@@ -4,7 +4,7 @@ Thanks for your interest in contributing!
 
 ## Development setup
 
-1. Install [Go](https://go.dev/) 1.24+ and [Task](https://taskfile.dev/).
+1. Install [Go](https://go.dev/) 1.26+ and [Task](https://taskfile.dev/).
 2. Clone the repo and run the tests:
 
 ```sh

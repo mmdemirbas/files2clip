@@ -145,7 +145,7 @@ Or use `task install-completions` to auto-detect your shell.
 
 ## Build from source
 
-Requires [Go](https://go.dev/) 1.24+ and [Task](https://taskfile.dev/).
+Requires [Go](https://go.dev/) 1.26+ and [Task](https://taskfile.dev/).
 
 ```sh
 task build          # build for current platform

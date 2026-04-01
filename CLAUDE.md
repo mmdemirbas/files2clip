@@ -68,7 +68,7 @@ Path keys: ignore_file (gitignore-style exclusion file).
 ## Conventions
 
 ### Language & dependencies
-- Go 1.24+, module path: `github.com/mmdemirbas/files2clip`
+- Go 1.26+, module path: `github.com/mmdemirbas/files2clip`
 - No external dependencies — stdlib only
 - Static binaries: `CGO_ENABLED=0`, stripped with `-ldflags="-s -w"`
 - Version injected at build time via `-X main.version`
