@@ -151,7 +151,7 @@ func BenchmarkReadPathsFromFile(b *testing.B) {
 	}
 	dir := b.TempDir()
 	path := filepath.Join(dir, "paths.txt")
-	if err := os.WriteFile(path, []byte(buf.String()), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(buf.String()), 0600); err != nil {
 		b.Fatal(err)
 	}
 
@@ -178,7 +178,7 @@ func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 	return path

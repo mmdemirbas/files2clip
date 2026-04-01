@@ -310,7 +310,7 @@ func BenchmarkLoadFromFile(b *testing.B) {
 	content := "max_file_size = 5MB\nmax_total_size = 20MB\nmax_files = 500\n"
 	dir := b.TempDir()
 	path := filepath.Join(dir, "config")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		b.Fatal(err)
 	}
 
@@ -345,7 +345,7 @@ func FuzzLoadFromFile(f *testing.F) {
 	f.Fuzz(func(t *testing.T, content string) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config")
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}
 		_, _ = LoadFromFile(path) // must not panic
@@ -356,7 +356,7 @@ func writeTempConfig(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write temp config: %v", err)
 	}
 	return path

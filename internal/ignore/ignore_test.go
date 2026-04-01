@@ -199,7 +199,7 @@ func TestLoadFile(t *testing.T) {
 	t.Run("valid file", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "ignore")
-		if err := os.WriteFile(path, []byte("*.log\nnode_modules/\n"), 0644); err != nil {
+		if err := os.WriteFile(path, []byte("*.log\nnode_modules/\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
 
