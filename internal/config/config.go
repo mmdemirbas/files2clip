@@ -46,52 +46,54 @@ func LoadFromFile(path string) (Config, error) {
 		return cfg, err
 	}
 
-	lines := strings.Split(string(data), "\n")
-	for i, line := range lines {
+	for i, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-
 		key, value, ok := strings.Cut(trimmed, "=")
 		if !ok {
 			return cfg, fmt.Errorf("line %d: invalid syntax (expected key = value): %s", i+1, trimmed)
 		}
-
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-
-		switch key {
-		case "max_file_size":
-			n, err := ParseSize(value)
-			if err != nil {
-				return cfg, fmt.Errorf("line %d: max_file_size: %w", i+1, err)
-			}
-			cfg.MaxFileSize = n
-		case "max_total_size":
-			n, err := ParseSize(value)
-			if err != nil {
-				return cfg, fmt.Errorf("line %d: max_total_size: %w", i+1, err)
-			}
-			cfg.MaxTotalSize = n
-		case "max_files":
-			n, err := strconv.Atoi(value)
-			if err != nil {
-				return cfg, fmt.Errorf("line %d: max_files: %w", i+1, err)
-			}
-			cfg.MaxFiles = n
-		case "full_paths":
-			cfg.FullPaths = parseBool(value)
-		case "ignore_file":
-			cfg.IgnoreFile = value
-		case "include_binary":
-			cfg.IncludeBinary = parseBool(value)
-		default:
-			fmt.Fprintf(os.Stderr, "config: unknown key %q on line %d\n", key, i+1)
+		if err := applyConfigLine(&cfg, strings.TrimSpace(key), strings.TrimSpace(value), i+1); err != nil {
+			return cfg, err
 		}
 	}
 
 	return cfg, nil
+}
+
+func applyConfigLine(cfg *Config, key, value string, lineNum int) error {
+	switch key {
+	case "max_file_size":
+		return setSize(&cfg.MaxFileSize, key, value, lineNum)
+	case "max_total_size":
+		return setSize(&cfg.MaxTotalSize, key, value, lineNum)
+	case "max_files":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("line %d: max_files: %w", lineNum, err)
+		}
+		cfg.MaxFiles = n
+	case "full_paths":
+		cfg.FullPaths = parseBool(value)
+	case "ignore_file":
+		cfg.IgnoreFile = value
+	case "include_binary":
+		cfg.IncludeBinary = parseBool(value)
+	default:
+		fmt.Fprintf(os.Stderr, "config: unknown key %q on line %d\n", key, lineNum)
+	}
+	return nil
+}
+
+func setSize(field *int64, key, value string, lineNum int) error {
+	n, err := ParseSize(value)
+	if err != nil {
+		return fmt.Errorf("line %d: %s: %w", lineNum, key, err)
+	}
+	*field = n
+	return nil
 }
 
 func parseBool(s string) bool {
