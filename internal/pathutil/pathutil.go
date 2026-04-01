@@ -22,7 +22,7 @@ func IsExcluded(path string) bool {
 // ReadPathsFromFile reads a file containing one path per line.
 // Empty lines and lines starting with # are ignored.
 func ReadPathsFromFile(filePath string) ([]string, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath) //nolint:gosec // G304: reading a user-supplied paths file is the tool's purpose
 	if err != nil {
 		return nil, err
 	}

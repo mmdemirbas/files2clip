@@ -227,7 +227,7 @@ func run() int {
 			continue
 		}
 
-		data, err := os.ReadFile(ap)
+		data, err := os.ReadFile(ap) //nolint:gosec // G304: reading user-specified file paths is the tool's purpose
 		if err != nil {
 			if os.IsNotExist(err) {
 				fmt.Fprintln(os.Stderr, style.Skip(fmt.Sprintf("%s — file not found", displayPath)))

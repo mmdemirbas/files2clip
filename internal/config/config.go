@@ -41,7 +41,7 @@ func ConfigFilePath() (string, error) {
 func LoadFromFile(path string) (Config, error) {
 	cfg := DefaultConfig()
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is the user's own config file, not external input
 	if err != nil {
 		return cfg, err
 	}

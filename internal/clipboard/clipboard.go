@@ -14,7 +14,7 @@ func Set(data []byte) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(cmdName, args...)
+	cmd := exec.Command(cmdName, args...) //nolint:gosec // G204: cmdName is an OS-selected constant, not user input
 	cmd.Stdin = bytes.NewReader(data)
 	return cmd.Run()
 }
@@ -25,7 +25,7 @@ func Get() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return exec.Command(cmdName, args...).Output()
+	return exec.Command(cmdName, args...).Output() //nolint:gosec // G204: cmdName is an OS-selected constant, not user input
 }
 
 func readCmd() (string, []string, error) {

@@ -37,7 +37,7 @@ type pattern struct {
 //   - foo/** matches everything inside foo
 //   - a/**/b matches a/b, a/x/b, a/x/y/b, etc.
 func LoadFile(path string) (*Matcher, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is a user-supplied ignore file, not external input
 	if err != nil {
 		return nil, err
 	}
