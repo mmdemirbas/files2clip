@@ -65,44 +65,48 @@ func Parse(text string) *Matcher {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-
-		p := pattern{}
-
-		if strings.HasPrefix(line, "\\#") || strings.HasPrefix(line, "\\!") {
-			// Backslash escapes a leading # or ! — treat literally
-			line = line[1:]
-		} else if strings.HasPrefix(line, "!") {
-			p.negated = true
-			line = line[1:]
-		}
-
-		if strings.HasSuffix(line, "/") {
-			p.dirOnly = true
-			line = strings.TrimRight(line, "/")
-		}
-
-		// A leading / anchors to the root but is stripped from the pattern
-		if strings.HasPrefix(line, "/") {
-			p.anchored = true
-			line = line[1:]
-		}
-
-		// If the pattern contains a / (after stripping leading/trailing),
-		// it's anchored to the path structure
-		if strings.Contains(line, "/") {
-			p.anchored = true
-		}
-
-		parts := strings.Split(line, "/")
-		// Pre-convert [!x] to [^x] at parse time so matchComponent doesn't
-		// need to do it on every call.
-		for i, part := range parts {
-			parts[i] = convertCharClassNeg(part)
-		}
-		p.parts = parts
-		patterns = append(patterns, p)
+		patterns = append(patterns, parsePattern(line))
 	}
 	return &Matcher{patterns: patterns}
+}
+
+// parsePattern converts a single non-empty, non-comment gitignore line into a pattern.
+func parsePattern(line string) pattern {
+	p := pattern{}
+
+	if strings.HasPrefix(line, "\\#") || strings.HasPrefix(line, "\\!") {
+		// Backslash escapes a leading # or ! — treat literally
+		line = line[1:]
+	} else if strings.HasPrefix(line, "!") {
+		p.negated = true
+		line = line[1:]
+	}
+
+	if strings.HasSuffix(line, "/") {
+		p.dirOnly = true
+		line = strings.TrimRight(line, "/")
+	}
+
+	// A leading / anchors to the root but is stripped from the pattern
+	if strings.HasPrefix(line, "/") {
+		p.anchored = true
+		line = line[1:]
+	}
+
+	// If the pattern contains a / (after stripping leading/trailing),
+	// it's anchored to the path structure
+	if strings.Contains(line, "/") {
+		p.anchored = true
+	}
+
+	parts := strings.Split(line, "/")
+	// Pre-convert [!x] to [^x] at parse time so matchComponent doesn't
+	// need to do it on every call.
+	for i, part := range parts {
+		parts[i] = convertCharClassNeg(part)
+	}
+	p.parts = parts
+	return p
 }
 
 // Match reports whether the given path should be ignored.
@@ -155,33 +159,29 @@ func matchPath(patParts, nameParts []string) bool {
 func doMatchParts(patParts, nameParts []string) bool {
 	for len(patParts) > 0 {
 		pat := patParts[0]
-
 		if pat == "**" {
-			patParts = patParts[1:]
-			if len(patParts) == 0 {
-				return true // trailing ** matches everything
-			}
-			// Try matching the remaining pattern against every suffix of nameParts
-			for i := 0; i <= len(nameParts); i++ {
-				if doMatchParts(patParts, nameParts[i:]) {
-					return true
-				}
-			}
+			return matchDoublestar(patParts[1:], nameParts)
+		}
+		if len(nameParts) == 0 || !matchComponent(pat, nameParts[0]) {
 			return false
 		}
-
-		if len(nameParts) == 0 {
-			return false
-		}
-
-		if !matchComponent(pat, nameParts[0]) {
-			return false
-		}
-
 		patParts = patParts[1:]
 		nameParts = nameParts[1:]
 	}
 	return len(nameParts) == 0
+}
+
+// matchDoublestar handles ** matching: tries remaining pattern against every suffix of nameParts.
+func matchDoublestar(remainingPat, nameParts []string) bool {
+	if len(remainingPat) == 0 {
+		return true // trailing ** matches everything
+	}
+	for i := 0; i <= len(nameParts); i++ {
+		if doMatchParts(remainingPat, nameParts[i:]) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchComponent matches a single path component (no slashes).
