@@ -1,19 +1,35 @@
 # Build
-build/
-dist/
+/bin/
+/build/
+/dist/
+/out/
+
+# Go
+*.test
+*.out
+*.prof
+cover.out
+
+# Secrets
+.env
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+.obsidian/
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Test/profile
-*.out
-*.prof
-*.test
+# Logs
+*.log
+*.err
+
+# Syncthing
+.stignore
+.stfolder
